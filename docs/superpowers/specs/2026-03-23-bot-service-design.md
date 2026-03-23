@@ -86,10 +86,10 @@ type BotConfig struct {
 }
 
 type ServiceConfig struct {
-    Bots          []BotConfig
-    RobotGroupID  string      // 机器人群 ID
-    TaskWhiteList []string    // Dispatcher 可分发的任务
-    UserWhiteList []string    // Dispatcher 允许的用户
+    Bots          []BotConfig `yaml:"bots"`
+    RobotGroupID  string      `yaml:"robot_group_id"`  // 机器人群 ID
+    TaskWhiteList []string    `yaml:"task_whitelist"`  // Dispatcher 可分发的任务
+    UserWhiteList []string    `yaml:"user_whitelist"`  // Dispatcher 允许的用户
 }
 ```
 
@@ -214,6 +214,25 @@ type TaskRecord struct {
 @用户 任务 [deploy.sh] 执行成功
 输出：部署成功
 ```
+
+**Executor → Dispatcher（错误情况）：**
+```
+@task-dispatcher task_failed:deploy.sh exit_code:1 error:"脚本执行失败: 未找到配置文件"
+```
+
+**Dispatcher → User（错误情况）：**
+```
+@用户 任务 [deploy.sh] 执行失败
+原因：脚本执行失败
+错误输出：未找到配置文件
+```
+
+### 4.3 输出处理规则
+
+- **多行输出**：使用 `\n` 转义，或使用代码块包裹
+- **特殊字符**：输出中的引号使用 `\"` 转义
+- **长度限制**：单条消息超过 2000 字符时截断并提示 "（输出已截断，完整日志请查看任务记录）"
+- **编码**：所有输出使用 UTF-8 编码
 
 ---
 
@@ -355,7 +374,16 @@ require (
 - 多机器人协作场景
 
 ### 10.3 端到端测试（可选）
+
+**说明：** 端到端测试仅用于验证与真实飞书 API 的集成，不是发布前置条件。建议在以下情况执行：
+- 首次集成飞书 SDK 时
+- 飞书 API 版本升级时
+- 生产环境部署前的验证阶段
+
+测试范围：
 - 连接真实飞书测试环境
+- 完整的消息流转测试
+- 错误恢复测试
 
 ---
 
