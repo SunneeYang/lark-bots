@@ -1,4 +1,4 @@
-module github.com/yourname/lark-bot-service
+module github.com/SunneeYang/lark-bots
 
 go 1.21
 
