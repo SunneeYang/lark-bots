@@ -1,7 +1,7 @@
 # 飞书机器人服务 - 测试配置
 # 此配置用于本地开发和测试
 
-robots:
+bots:
   # 任务分发机器人
   - name: "test-dispatcher"
     app_id: "cli_test_dispatcher_123"
