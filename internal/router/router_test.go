@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yourname/lark-bot-service/internal/bot"
+	"github.com/SunneeYang/lark-bots/internal/bot"
 )
 
 // MockHandler 用于测试

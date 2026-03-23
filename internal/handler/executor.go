@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/yourname/lark-bot-service/internal/bot"
+	"github.com/SunneeYang/lark-bots/internal/bot"
 )
 
 // ExecutorHandler 执行机器人处理器

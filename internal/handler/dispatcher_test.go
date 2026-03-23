@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yourname/lark-bot-service/internal/bot"
+	"github.com/SunneeYang/lark-bots/internal/bot"
 )
 
 func TestDispatcherHandler_HandleUserMessage(t *testing.T) {
@@ -81,40 +81,40 @@ func TestDispatcherHandler_ParseTaskName(t *testing.T) {
 	handler := NewDispatcherHandler()
 
 	tests := []struct {
-		name        string
-		message     string
+		name         string
+		message      string
 		expectedTask string
-		expectError bool
+		expectError  bool
 	}{
 		{
-			name:        "带执行前缀",
-			message:     "执行 deploy.sh",
+			name:         "带执行前缀",
+			message:      "执行 deploy.sh",
 			expectedTask: "deploy.sh",
-			expectError: false,
+			expectError:  false,
 		},
 		{
-			name:        "直接任务名",
-			message:     "deploy.sh",
+			name:         "直接任务名",
+			message:      "deploy.sh",
 			expectedTask: "deploy.sh",
-			expectError: false,
+			expectError:  false,
 		},
 		{
-			name:        "带参数",
-			message:     "deploy.sh --env=prod",
+			name:         "带参数",
+			message:      "deploy.sh --env=prod",
 			expectedTask: "deploy.sh",
-			expectError: false,
+			expectError:  false,
 		},
 		{
-			name:        "空消息",
-			message:     "",
+			name:         "空消息",
+			message:      "",
 			expectedTask: "",
-			expectError: true,
+			expectError:  true,
 		},
 		{
-			name:        "只有前缀",
-			message:     "执行",
+			name:         "只有前缀",
+			message:      "执行",
 			expectedTask: "",
-			expectError: true,
+			expectError:  true,
 		},
 	}
 

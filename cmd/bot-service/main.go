@@ -8,11 +8,11 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/yourname/lark-bot-service/internal/bot"
-	"github.com/yourname/lark-bot-service/internal/config"
-	"github.com/yourname/lark-bot-service/internal/handler"
-	"github.com/yourname/lark-bot-service/internal/logger"
-	"github.com/yourname/lark-bot-service/internal/router"
+	"github.com/SunneeYang/lark-bots/internal/bot"
+	"github.com/SunneeYang/lark-bots/internal/config"
+	"github.com/SunneeYang/lark-bots/internal/handler"
+	"github.com/SunneeYang/lark-bots/internal/logger"
+	"github.com/SunneeYang/lark-bots/internal/router"
 	"github.com/spf13/cobra"
 )
 

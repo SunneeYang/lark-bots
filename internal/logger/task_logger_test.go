@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourname/lark-bot-service/internal/bot"
+	"github.com/SunneeYang/lark-bots/internal/bot"
 )
 
 func TestTaskLogger_CreateTask(t *testing.T) {

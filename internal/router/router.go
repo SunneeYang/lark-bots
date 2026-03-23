@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yourname/lark-bot-service/internal/bot"
+	"github.com/SunneeYang/lark-bots/internal/bot"
 )
 
 // MessageHandler 消息处理接口

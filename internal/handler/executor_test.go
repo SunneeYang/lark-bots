@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yourname/lark-bot-service/internal/bot"
+	"github.com/SunneeYang/lark-bots/internal/bot"
 )
 
 func TestExecutorHandler_VerifyDispatcher(t *testing.T) {
@@ -108,22 +108,22 @@ func TestExecutorHandler_ParseScriptCommand(t *testing.T) {
 	handler := NewExecutorHandler()
 
 	tests := []struct {
-		name        string
-		message     string
+		name           string
+		message        string
 		expectedScript string
 		expectedArgs   []string
 		expectError    bool
 	}{
 		{
-			name:        "valid command with args",
-			message:     "execute /opt/scripts/test.sh arg1 arg2",
+			name:           "valid command with args",
+			message:        "execute /opt/scripts/test.sh arg1 arg2",
 			expectedScript: "/opt/scripts/test.sh",
 			expectedArgs:   []string{"arg1", "arg2"},
 			expectError:    false,
 		},
 		{
-			name:        "valid command without args",
-			message:     "execute /opt/scripts/test.sh",
+			name:           "valid command without args",
+			message:        "execute /opt/scripts/test.sh",
 			expectedScript: "/opt/scripts/test.sh",
 			expectedArgs:   []string{},
 			expectError:    false,
@@ -131,12 +131,12 @@ func TestExecutorHandler_ParseScriptCommand(t *testing.T) {
 		{
 			name:        "invalid command - missing execute",
 			message:     "/opt/scripts/test.sh",
-			expectError:    true,
+			expectError: true,
 		},
 		{
 			name:        "invalid command - missing script",
 			message:     "execute",
-			expectError:    true,
+			expectError: true,
 		},
 	}
 
@@ -216,10 +216,10 @@ func TestExtractSenderBotID(t *testing.T) {
 
 func TestExtractMessageContentFromExecutor(t *testing.T) {
 	tests := []struct {
-		name        string
-		event       interface{}
+		name            string
+		event           interface{}
 		expectedContent string
-		expectError bool
+		expectError     bool
 	}{
 		{
 			name: "valid event",

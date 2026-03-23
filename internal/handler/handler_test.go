@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yourname/lark-bot-service/internal/bot"
+	"github.com/SunneeYang/lark-bots/internal/bot"
 )
 
 func TestHandlerInterface(t *testing.T) {
