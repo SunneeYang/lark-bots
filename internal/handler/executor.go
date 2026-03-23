@@ -14,9 +14,8 @@ import (
 type ExecutorHandler struct {
 	*BaseHandler
 
-	allowedDispatchers  map[string]bool
+	allowedDispatchers map[string]bool
 	taskScripts        map[string]string // 任务名 -> 脚本路径
-	dispatcherOpenID   string          // Dispatcher 的 open_id，用于 @ 汇报结果
 }
 
 // NewExecutorHandler 创建执行机器人处理器
@@ -41,11 +40,6 @@ func (h *ExecutorHandler) SetTaskScripts(scripts map[string]string) {
 	h.taskScripts = scripts
 }
 
-// SetDispatcherOpenID 设置 Dispatcher 的 open_id（用于 @ 汇报结果）
-func (h *ExecutorHandler) SetDispatcherOpenID(openID string) {
-	h.dispatcherOpenID = openID
-}
-
 // Handle 处理消息
 func (h *ExecutorHandler) Handle(_ context.Context, event interface{}, botClient *bot.BotClient) error {
 	// 解析发送者 bot_id
@@ -66,23 +60,23 @@ func (h *ExecutorHandler) Handle(_ context.Context, event interface{}, botClient
 		return fmt.Errorf("未授权的 dispatcher: %s", senderBotID)
 	}
 
-	// 解析任务名
-	taskName, err := h.parseTaskName(message)
-	if err != nil {
-		return fmt.Errorf("解析任务名失败: %w", err)
+	// 解析任务名（纯文本任务名）
+	taskName := h.parseTaskName(message)
+	if taskName == "" {
+		return nil // 不是有效的任务，静默忽略
 	}
 
 	// 转换任务名到脚本路径
 	scriptPath, ok := h.taskScripts[taskName]
 	if !ok {
-		return fmt.Errorf("任务 %s 未配置", taskName)
+		return nil // 任务不在自己的任务列表中，静默忽略
 	}
 
 	// 执行脚本
 	output, err := h.executeScript(scriptPath, nil)
 
-	// 向 dispatcher 汇报结果
-	resultMsg := fmt.Sprintf("任务 [%s] 执行%s", taskName, map[bool]string{true: "成功", false: "失败"}[err == nil])
+	// 向机器人群汇报结果（纯文本）
+	resultMsg := fmt.Sprintf("[%s] 任务 [%s] 执行%s", botClient.Name, taskName, map[bool]string{true: "成功", false: "失败"}[err == nil])
 	if err != nil {
 		resultMsg += fmt.Sprintf(": %v", err)
 	} else {
@@ -94,28 +88,22 @@ func (h *ExecutorHandler) Handle(_ context.Context, event interface{}, botClient
 		resultMsg += fmt.Sprintf("\n输出:\n%s", strings.TrimSpace(output))
 	}
 
-	fmt.Printf("📤 [%s] 汇报结果: @%s %s\n", botClient.Name, h.dispatcherOpenID, taskName)
-	if err := h.SendAtToGroup(h.dispatcherOpenID, resultMsg, botClient); err != nil {
+	fmt.Printf("📤 [%s] 汇报结果: %s\n", botClient.Name, taskName)
+	if err := h.SendToGroup(resultMsg, botClient); err != nil {
 		fmt.Printf("❌ [%s] 汇报结果失败: %v\n", botClient.Name, err)
 	}
 
 	return nil
 }
 
-// parseTaskName 解析任务名（格式: @开发服专员 check_logs）
-func (h *ExecutorHandler) parseTaskName(message string) (string, error) {
+// parseTaskName 解析任务名（纯文本任务名）
+func (h *ExecutorHandler) parseTaskName(message string) string {
 	message = strings.TrimSpace(message)
-
-	// 移除 @提及部分（如果有）
-	if strings.HasPrefix(message, "@") {
-		parts := strings.Fields(message)
-		if len(parts) < 2 {
-			return "", fmt.Errorf("消息格式错误")
-		}
-		return parts[1], nil
+	if message == "" {
+		return ""
 	}
-
-	return message, nil
+	parts := strings.Fields(message)
+	return parts[0]
 }
 
 // executeScript 执行脚本

@@ -64,6 +64,20 @@ func ValidateConfig(cfg *ServiceConfig) error {
 		}
 	}
 
+	// 检查所有 executor 的任务名唯一性
+	taskNames := make(map[string]string) // taskName -> executorName
+	for _, bot := range cfg.Bots {
+		if bot.Role == "executor" {
+			for taskName := range bot.TaskScripts {
+				if existingExecutor, exists := taskNames[taskName]; exists {
+					return fmt.Errorf("配置错误：任务名 '%s' 被多个 executor 声明（%s 和 %s），任务名必须全局唯一",
+						taskName, existingExecutor, bot.Name)
+				}
+				taskNames[taskName] = bot.Name
+			}
+		}
+	}
+
 	// 检查必要配置
 	if cfg.RobotGroupID == "" {
 		return fmt.Errorf("配置错误：缺少 robot_group_id")

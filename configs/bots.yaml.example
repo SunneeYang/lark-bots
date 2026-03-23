@@ -5,23 +5,6 @@
 # 获取方式: 在飞书群设置中查看群 ID
 robot_group_id: "oc_xxxxxxxxxxxxxxxxx"
 
-# 任务白名单（分发机器人允许分发的任务）
-# 只有在此列表中的任务才能被执行
-task_whitelist:
-  - "deploy"
-  - "restart"
-  - "check_logs"
-  - "run_test"
-  - "backup"
-
-# 用户白名单（分发机器人允许的用户）
-# 只有在此列表中的用户才能发起任务
-# 获取方式: 在飞书管理后台查看用户 ID
-user_whitelist:
-  - "ou_xxxxxxxxxxxxxxxxx"
-  - "ou_yyyyyyyyyyyyyyyyyy"
-  - "ou_zzzzzzzzzzzzzzzzzzzz"
-
 # 机器人配置列表
 bots:
   # ====================
@@ -29,51 +12,59 @@ bots:
   # ====================
   # 作用:
   #   - 加入用户群，接收用户指令
-  #   - 在机器人群分发任务给执行机器人
+  #   - 在机器人群分发任务给执行机器人（纯文本，不使用 @mention）
   #   - 收集执行结果并回复用户
-  #   - 配置用户白名单和任务白名单进行安全控制
+  #   - 配置用户白名单进行安全控制
+  #   - 任务白名单自动从所有 executor 的 task_scripts 合并
   - name: "task-dispatcher"
     app_id: "cli_xxxxxxxxxxxxxxxxx"
     app_secret: "xxxxxxxxxxxxxxxxxxxx"
     role: "dispatcher"
+    # 允许的用户列表（仅 dispatcher 角色）
+    # 只有在此列表中的用户才能发起任务
+    # 获取方式: 在飞书管理后台查看用户 ID
+    allowed_users:
+      - "ou_xxxxxxxxxxxxxxxxx"
+      - "ou_yyyyyyyyyyyyyyyyyy"
+      - "ou_zzzzzzzzzzzzzzzzzzzz"
 
   # ====================
   # 执行机器人 1 - Shell 脚本执行器
   # ====================
   # 作用:
-  #   - 只在机器人群，接收分发机器人的指令
-  #   - 执行部署、重启等运维脚本
-  #   - 通过 allowed_dispatchers 限制只接受特定 dispatcher 的命令
-  #   - 通过 allowed_scripts 限制只能执行白名单脚本
-  - name: "shell-executor"
+  #   - 只在机器人群，监听群里所有消息
+  #   - 通过 sender bot_id 校验是否来自 dispatcher
+  #   - 通过任务名判断是否需要执行（任务名必须全局唯一）
+  #   - 执行脚本并汇报结果到机器人群
+  # 注意: 需要在飞书开放平台申请 im:message.group_msg 权限
+  - name: "开发服专员"
     app_id: "cli_yyyyyyyyyyyyyyyyyy"
     app_secret: "yyyyyyyyyyyyyyyyyy"
     role: "executor"
+    # 允许的 dispatcher app_id 列表
     allowed_dispatchers:
-      - "cli_xxxxxxxxxxxxxxxxx"  # 只接受来自 task-dispatcher 的命令
-    allowed_scripts:
-      - "/opt/scripts/deploy.sh"
-      - "/opt/scripts/restart.sh"
-      - "/opt/scripts/check_logs.sh"
-      - "/opt/scripts/backup.sh"
+      - "cli_xxxxxxxxxxxxxxxxx"  # task-dispatcher 的 app_id
+    # 任务名 -> 脚本路径映射（任务名必须全局唯一）
+    task_scripts:
+      deploy: "/opt/scripts/deploy.sh"
+      restart: "/opt/scripts/restart.sh"
+      check_logs: "/opt/scripts/check_logs.sh"
 
   # ====================
   # 执行机器人 2 - 测试执行器
   # ====================
   # 作用:
   #   - 执行测试相关的脚本
-  #   - 与 shell-executor 分离，实现职责分离
-  #   - 可以配置不同的脚本白名单
-  - name: "test-executor"
+  #   - 与开发服专员分离，实现职责分离
+  - name: "测试专员"
     app_id: "cli_zzzzzzzzzzzzzzzzzzzz"
     app_secret: "zzzzzzzzzzzzzzzzzzzz"
     role: "executor"
     allowed_dispatchers:
-      - "cli_xxxxxxxxxxxxxxxxx"  # 只接受来自 task-dispatcher 的命令
-    allowed_scripts:
-      - "/opt/scripts/run_test.sh"
-      - "/opt/scripts/integration_test.sh"
-      - "/opt/scripts/e2e_test.sh"
+      - "cli_xxxxxxxxxxxxxxxxx"  # task-dispatcher 的 app_id
+    task_scripts:
+      run_test: "/opt/scripts/run_test.sh"
+      e2e_test: "/opt/scripts/e2e_test.sh"
 
 # ====================
 # 配置说明
@@ -82,26 +73,25 @@ bots:
 ## 机器人角色说明
 #
 ### Dispatcher (分发机器人)
-# - 必须加入用户群和机器人群
-# - 接收用户在群里 @ 机器人的消息
-# - 验证用户是否在白名单中
-# - 验证任务是否在白名单中
-# - 在机器人群 @ 执行机器人分发任务
-# - 收集执行结果并回复用户
+# - 必须加入用户群，接收用户在群里 @ 机器人的消息
+# - 验证用户是否在 allowed_users 白名单中
+# - 任务白名单自动从所有 executor 的 task_scripts 合并计算
+# - 在机器人群发送纯文本任务名（不使用 @mention）
+# - 私聊时回复用户告知任务已转发
 #
 ### Executor (执行机器人)
 # - 只加入机器人群
-# - 只接受来自指定 dispatcher 的命令
-# - 验证脚本是否在白名单中
-# - 执行脚本并返回结果
+# - 通过 sender bot_id 校验是否来自允许的 dispatcher
+# - 监听群消息，任务名匹配则执行
+# - 执行脚本并汇报结果到机器人群
 #
 ## 安全配置建议
 #
 # 1. 用户白名单: 严格限制可以发起任务的用户
-# 2. 任务白名单: 严格限制可以执行的任务名称
+# 2. 任务名唯一性: 所有 executor 的任务名必须全局唯一（启动时校验）
 # 3. Executor 安全校验:
-#    - allowed_dispatchers: 只接受特定 dispatcher 的命令
-#    - allowed_scripts: 只允许执行白名单中的脚本
+#    - allowed_dispatchers: 只接受特定 dispatcher 的命令（按 app_id）
+#    - task_scripts: 只允许执行白名单中的脚本
 # 4. 脚本权限: 确保脚本文件权限正确（如 750）
 # 5. 网络隔离: 机器人之间在专门的机器人群通信
 #
@@ -116,15 +106,20 @@ bots:
 #    - 在飞书中创建机器人专用群
 #    - 在群设置中查看群 ID
 #
-# 3. user_whitelist 中的用户 ID:
+# 3. allowed_users 中的用户 ID:
 #    - 在飞书管理后台查看用户信息
 #    - 或通过 API 获取用户 ID
 #
+# 4. Executor 权限:
+#    - 在飞书开放平台为 executor 应用申请 im:message.group_msg 权限
+#    - 这是免审权限，可直接获取
+#
 ## 使用示例
 #
-# 1. 用户在群里发送: "@task-dispatcher 执行 deploy.sh"
-# 2. Dispatcher 验证用户和任务白名单
-# 3. Dispatcher 在机器人群发送: "@shell-executor execute /opt/scripts/deploy.sh"
-# 4. Executor 验证来源和脚本白名单
-# 5. Executor 执行脚本并返回结果
-# 6. Dispatcher 收集结果并回复用户
+# 1. 用户在群里发送: "@task-dispatcher deploy"
+# 2. Dispatcher 验证用户在 allowed_users 中
+# 3. Dispatcher 验证任务名在 executor 的 task_scripts 中
+# 4. Dispatcher 在机器人群发送纯文本: "deploy"
+# 5. 开发服专员 收到消息，校验 sender 是 task-dispatcher
+# 6. 开发服专员 执行 /opt/scripts/deploy.sh
+# 7. 开发服专员 在机器人群发送结果

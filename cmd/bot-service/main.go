@@ -125,7 +125,6 @@ func runStart(cmd *cobra.Command, args []string) {
 	fmt.Println("\n📝 注册机器人:")
 	for _, botCfg := range cfg.Bots {
 		botClient := bot.NewBotClient(botCfg.Name, botCfg.AppID, botCfg.AppSecret, botCfg.Role)
-		botClient.OpenID = botCfg.OpenID
 		// 为每个机器人初始化飞书 SDK 客户端
 		botClient.InitLarkClient()
 		if botCfg.Role == "executor" {
@@ -135,7 +134,7 @@ func runStart(cmd *cobra.Command, args []string) {
 			fmt.Printf("❌ 注册机器人失败: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("   ✅ %s (角色: %s, AppID: %s, OpenID: %s)\n", botCfg.Name, botCfg.Role, botCfg.AppID, botCfg.OpenID)
+		fmt.Printf("   ✅ %s (角色: %s, AppID: %s)\n", botCfg.Name, botCfg.Role, botCfg.AppID)
 	}
 
 	// 3. 过滤要启动的机器人
@@ -174,50 +173,29 @@ func runStart(cmd *cobra.Command, args []string) {
 	globalRouter.RegisterHandler("dispatcher", dispatcherHandler)
 	fmt.Println("   ✅ dispatcher 处理器注册成功")
 
-	// 配置 dispatcher、executor 相关
-	executorBots := make(map[string]string)
-	var taskScripts map[string]string
-	var executorOpenID string
-	var dispatcherOpenID string
+	// 配置 dispatcher 相关
 	var dispatcherCfg *config.BotConfig
+	// 收集所有 executor 的任务名（用于 dispatcher 校验）
+	allTaskNames := make([]string, 0)
 	for _, botCfg := range cfg.Bots {
 		if botCfg.Role == "dispatcher" {
 			dispatcherCfg = &botCfg
-			if botCfg.OpenID != "" {
-				dispatcherOpenID = botCfg.OpenID
-			}
 		}
 		if botCfg.Role == "executor" {
-			executorBots[botCfg.Name] = botCfg.Name
-			if botCfg.OpenID != "" {
-				executorOpenID = botCfg.OpenID
-			}
-			if botCfg.TaskScripts != nil {
-				taskScripts = botCfg.TaskScripts
+			for taskName := range botCfg.TaskScripts {
+				allTaskNames = append(allTaskNames, taskName)
 			}
 		}
 	}
 
-	// 设置 dispatcher 的用户和任务白名单
+	// 设置 dispatcher 的用户白名单和任务白名单
 	if dispatcherCfg != nil {
-		fmt.Printf("📋 加载 dispatcher 配置: allowed_users=%v, allowed_tasks=%v\n",
-			dispatcherCfg.AllowedUsers, dispatcherCfg.AllowedTasks)
+		fmt.Printf("📋 加载 dispatcher 配置: allowed_users=%v, total_tasks=%d\n",
+			dispatcherCfg.AllowedUsers, len(allTaskNames))
 		dispatcherHandler.SetAllowedUsers(dispatcherCfg.AllowedUsers)
-		dispatcherHandler.SetAllowedTasks(dispatcherCfg.AllowedTasks)
+		dispatcherHandler.SetAllowedTasks(allTaskNames)
 	} else {
 		fmt.Println("⚠️ 未找到 dispatcher 配置")
-	}
-
-	// 设置执行机器人 open_id
-	if executorOpenID != "" {
-		dispatcherHandler.SetExecutorOpenID(executorOpenID)
-		fmt.Printf("📋 执行机器人 open_id: %s\n", executorOpenID)
-	} else {
-		fmt.Println("⚠️ 未配置执行机器人 open_id，无法 @ 提及")
-	}
-	dispatcherHandler.SetExecutorBots(executorBots)
-	if taskScripts != nil {
-		dispatcherHandler.SetTaskScripts(taskScripts)
 	}
 
 	executorHandlers := make(map[string]*handler.ExecutorHandler)
@@ -226,9 +204,6 @@ func runStart(cmd *cobra.Command, args []string) {
 			executorHandler := handler.NewExecutorHandler()
 			executorHandler.SetAllowedDispatchers(botCfg.AllowedDispatchers)
 			executorHandler.SetTaskScripts(botCfg.TaskScripts)
-			if dispatcherOpenID != "" {
-				executorHandler.SetDispatcherOpenID(dispatcherOpenID)
-			}
 			executorHandlers[botCfg.Name] = executorHandler
 			fmt.Printf("   ✅ executor 处理器注册成功 (bot: %s)\n", botCfg.Name)
 		}

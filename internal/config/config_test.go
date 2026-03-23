@@ -16,8 +16,8 @@ app_secret: "secret"
 role: "executor"
 allowed_dispatchers:
   - "cli_456"
-allowed_scripts:
-  - "/opt/scripts/test.sh"
+task_scripts:
+  test_script: "/opt/scripts/test.sh"
 `
 
 	var cfg BotConfig
@@ -37,6 +37,10 @@ allowed_scripts:
 
 	if len(cfg.AllowedDispatchers) != 1 {
 		t.Errorf("Expected 1 allowed dispatcher, got %d", len(cfg.AllowedDispatchers))
+	}
+
+	if len(cfg.TaskScripts) != 1 {
+		t.Errorf("Expected 1 task script, got %d", len(cfg.TaskScripts))
 	}
 }
 
@@ -70,8 +74,8 @@ robot_group_id: "oc_xxx"
 		t.Errorf("Expected RobotGroupID 'oc_xxx', got '%s'", cfg.RobotGroupID)
 	}
 
-	if len(cfg.Bots[0].AllowedTasks) != 2 {
-		t.Errorf("Expected 2 tasks in allowed_tasks, got %d", len(cfg.Bots[0].AllowedTasks))
+	if len(cfg.Bots[0].AllowedUsers) != 1 {
+		t.Errorf("Expected 1 allowed user, got %d", len(cfg.Bots[0].AllowedUsers))
 	}
 }
 
@@ -86,9 +90,6 @@ bots:
     app_id: "cli_123"
     app_secret: "secret"
     role: "dispatcher"
-    allowed_tasks:
-      - "deploy"
-      - "restart"
     allowed_users:
       - "user_1"
   - name: "executor"
@@ -97,6 +98,8 @@ bots:
     role: "executor"
     allowed_dispatchers:
       - "cli_123"
+    task_scripts:
+      deploy: "/opt/scripts/deploy.sh"
 robot_group_id: "oc_xxx"
 `
 
@@ -126,10 +129,6 @@ robot_group_id: "oc_xxx"
 
 	if cfg.RobotGroupID != "oc_xxx" {
 		t.Errorf("Expected RobotGroupID 'oc_xxx', got '%s'", cfg.RobotGroupID)
-	}
-
-	if len(cfg.Bots[0].AllowedTasks) != 2 {
-		t.Errorf("Expected 2 tasks in allowed_tasks, got %d", len(cfg.Bots[0].AllowedTasks))
 	}
 }
 

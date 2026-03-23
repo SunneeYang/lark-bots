@@ -13,11 +13,8 @@ import (
 type DispatcherHandler struct {
 	*BaseHandler
 
-	userWhiteList   map[string]bool
-	taskWhiteList   map[string]bool
-	taskScripts     map[string]string // 任务名 -> 脚本路径
-	executorBots   map[string]string
-	executorOpenID string // 执行机器人的 open_id（用于 @ 提及）
+	userWhiteList map[string]bool
+	taskWhiteList map[string]bool
 }
 
 // NewDispatcherHandler 创建分发机器人处理器
@@ -26,7 +23,6 @@ func NewDispatcherHandler() *DispatcherHandler {
 		BaseHandler:   NewBaseHandler(),
 		userWhiteList: make(map[string]bool),
 		taskWhiteList: make(map[string]bool),
-		taskScripts:   make(map[string]string),
 	}
 }
 
@@ -44,21 +40,6 @@ func (h *DispatcherHandler) SetAllowedTasks(tasks []string) {
 	for _, task := range tasks {
 		h.taskWhiteList[task] = true
 	}
-}
-
-// SetTaskScripts 设置任务脚本映射 (任务名 -> 脚本路径)
-func (h *DispatcherHandler) SetTaskScripts(scripts map[string]string) {
-	h.taskScripts = scripts
-}
-
-// SetExecutorBots 设置执行机器人 (name -> name)
-func (h *DispatcherHandler) SetExecutorBots(bots map[string]string) {
-	h.executorBots = bots
-}
-
-// SetExecutorOpenID 设置执行机器人的 open_id（用于 @ 提及）
-func (h *DispatcherHandler) SetExecutorOpenID(openID string) {
-	h.executorOpenID = openID
 }
 
 // Handle 处理消息

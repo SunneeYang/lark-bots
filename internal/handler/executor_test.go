@@ -115,39 +115,41 @@ func TestExecutorHandler_ParseTaskName(t *testing.T) {
 		name         string
 		message      string
 		expectedTask string
-		expectError  bool
+		expectEmpty  bool
 	}{
-		{
-			name:         "带 @ 提及",
-			message:      "@开发服专员 check_logs",
-			expectedTask: "check_logs",
-			expectError:  false,
-		},
 		{
 			name:         "纯任务名",
 			message:      "deploy",
 			expectedTask: "deploy",
-			expectError:  false,
+			expectEmpty:  false,
 		},
 		{
-			name:        "只有 @ 提及",
-			message:     "@开发服专员",
-			expectError: true,
+			name:         "带参数的任务名",
+			message:      "check_logs --lines 100",
+			expectedTask: "check_logs",
+			expectEmpty:  false,
+		},
+		{
+			name:         "空消息",
+			message:      "",
+			expectEmpty:  true,
+		},
+		{
+			name:         "纯空格消息",
+			message:      "   ",
+			expectEmpty:  true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			taskName, err := handler.parseTaskName(tt.message)
+			taskName := handler.parseTaskName(tt.message)
 
-			if tt.expectError {
-				if err == nil {
-					t.Error("Expected error but got nil")
+			if tt.expectEmpty {
+				if taskName != "" {
+					t.Errorf("Expected empty task but got '%s'", taskName)
 				}
 			} else {
-				if err != nil {
-					t.Errorf("Unexpected error: %v", err)
-				}
 				if taskName != tt.expectedTask {
 					t.Errorf("Expected task '%s', got '%s'", tt.expectedTask, taskName)
 				}
