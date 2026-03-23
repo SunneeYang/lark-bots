@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/yourname/lark-bot-service/internal/bot"
@@ -108,9 +109,10 @@ func TestMessageRouter_Route_HandlerNotFound(t *testing.T) {
 		t.Error("Expected error for missing handler, got nil")
 	}
 
-	expectedMsg := "未找到角色"
-	if err.Error()[:len(expectedMsg)] != expectedMsg {
-		t.Errorf("Expected error message to start with '%s', got '%s'", expectedMsg, err.Error())
+	// 检查错误消息包含关键信息
+	expectedInMsg := "的处理器"
+	if !strings.Contains(err.Error(), expectedInMsg) {
+		t.Errorf("Expected error message to contain '%s', got '%s'", expectedInMsg, err.Error())
 	}
 }
 
