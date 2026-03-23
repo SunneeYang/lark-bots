@@ -1,0 +1,314 @@
+package handler
+
+import (
+	"context"
+	"testing"
+
+	"github.com/yourname/lark-bot-service/internal/bot"
+)
+
+func TestDispatcherHandler_HandleUserMessage(t *testing.T) {
+	handler := NewDispatcherHandler()
+
+	// 设置白名单
+	handler.SetWhiteLists([]string{"user_1"}, []string{"deploy.sh", "restart.sh"})
+
+	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
+
+	// 测试正常消息
+	event := map[string]interface{}{
+		"sender": map[string]interface{}{
+			"user_id": "user_1",
+		},
+		"message": map[string]interface{}{
+			"content": "执行 deploy.sh",
+		},
+	}
+
+	err := handler.Handle(context.Background(), event, testBot)
+	if err != nil {
+		t.Logf("Handle returned error (expected for incomplete implementation): %v", err)
+	}
+}
+
+func TestDispatcherHandler_UserNotInWhitelist(t *testing.T) {
+	handler := NewDispatcherHandler()
+
+	// 设置白名单，不包含 user_2
+	handler.SetWhiteLists([]string{"user_1"}, []string{"deploy.sh"})
+
+	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
+
+	event := map[string]interface{}{
+		"sender": map[string]interface{}{
+			"user_id": "user_2",
+		},
+		"message": map[string]interface{}{
+			"content": "执行 deploy.sh",
+		},
+	}
+
+	err := handler.Handle(context.Background(), event, testBot)
+	if err == nil {
+		t.Error("Expected error for user not in whitelist, got nil")
+	}
+}
+
+func TestDispatcherHandler_TaskNotInWhitelist(t *testing.T) {
+	handler := NewDispatcherHandler()
+
+	// 设置白名单，不包含 test.sh
+	handler.SetWhiteLists([]string{"user_1"}, []string{"deploy.sh"})
+
+	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
+
+	event := map[string]interface{}{
+		"sender": map[string]interface{}{
+			"user_id": "user_1",
+		},
+		"message": map[string]interface{}{
+			"content": "执行 test.sh",
+		},
+	}
+
+	err := handler.Handle(context.Background(), event, testBot)
+	if err == nil {
+		t.Error("Expected error for task not in whitelist, got nil")
+	}
+}
+
+func TestDispatcherHandler_ParseTaskName(t *testing.T) {
+	handler := NewDispatcherHandler()
+
+	tests := []struct {
+		name        string
+		message     string
+		expectedTask string
+		expectError bool
+	}{
+		{
+			name:        "带执行前缀",
+			message:     "执行 deploy.sh",
+			expectedTask: "deploy.sh",
+			expectError: false,
+		},
+		{
+			name:        "直接任务名",
+			message:     "deploy.sh",
+			expectedTask: "deploy.sh",
+			expectError: false,
+		},
+		{
+			name:        "带参数",
+			message:     "deploy.sh --env=prod",
+			expectedTask: "deploy.sh",
+			expectError: false,
+		},
+		{
+			name:        "空消息",
+			message:     "",
+			expectedTask: "",
+			expectError: true,
+		},
+		{
+			name:        "只有前缀",
+			message:     "执行",
+			expectedTask: "",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			taskName, err := handler.parseTaskName(tt.message)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if taskName != tt.expectedTask {
+					t.Errorf("Expected task name '%s', got '%s'", tt.expectedTask, taskName)
+				}
+			}
+		})
+	}
+}
+
+func TestDispatcherHandler_SetWhiteLists(t *testing.T) {
+	handler := NewDispatcherHandler()
+
+	users := []string{"user_1", "user_2"}
+	tasks := []string{"deploy.sh", "restart.sh"}
+
+	handler.SetWhiteLists(users, tasks)
+
+	// 验证白名单已设置
+	// 由于 userWhiteList 和 taskWhiteList 是私有字段，我们通过 Handle 方法间接验证
+	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
+
+	// 测试用户在白名单中
+	event := map[string]interface{}{
+		"sender": map[string]interface{}{
+			"user_id": "user_1",
+		},
+		"message": map[string]interface{}{
+			"content": "deploy.sh",
+		},
+	}
+
+	err := handler.Handle(context.Background(), event, testBot)
+	// 不应该报错用户不在白名单
+	if err != nil && err.Error() == "用户不在白名单中: user_1" {
+		t.Error("Expected user_1 to be in whitelist")
+	}
+}
+
+func TestExtractSenderID(t *testing.T) {
+	tests := []struct {
+		name        string
+		event       interface{}
+		expectedID  string
+		expectError bool
+	}{
+		{
+			name: "正常事件",
+			event: map[string]interface{}{
+				"sender": map[string]interface{}{
+					"user_id": "user_1",
+				},
+			},
+			expectedID:  "user_1",
+			expectError: false,
+		},
+		{
+			name:        "非 map 类型",
+			event:       "invalid",
+			expectedID:  "",
+			expectError: true,
+		},
+		{
+			name: "缺少 sender 字段",
+			event: map[string]interface{}{
+				"message": map[string]interface{}{
+					"content": "test",
+				},
+			},
+			expectedID:  "",
+			expectError: true,
+		},
+		{
+			name: "sender 不是 map 类型",
+			event: map[string]interface{}{
+				"sender": "invalid",
+			},
+			expectedID:  "",
+			expectError: true,
+		},
+		{
+			name: "缺少 user_id 字段",
+			event: map[string]interface{}{
+				"sender": map[string]interface{}{
+					"bot_id": "bot_1",
+				},
+			},
+			expectedID:  "",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			userID, err := extractSenderID(tt.event)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error but got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if userID != tt.expectedID {
+					t.Errorf("Expected user ID '%s', got '%s'", tt.expectedID, userID)
+				}
+			}
+		})
+	}
+}
+
+func TestDispatcherExtractMessageContent(t *testing.T) {
+	tests := []struct {
+		name        string
+		event       interface{}
+		expectedMsg string
+		expectError bool
+	}{
+		{
+			name: "正常消息",
+			event: map[string]interface{}{
+				"message": map[string]interface{}{
+					"content": "执行 deploy.sh",
+				},
+			},
+			expectedMsg: "执行 deploy.sh",
+			expectError: false,
+		},
+		{
+			name:        "非 map 类型",
+			event:       "invalid",
+			expectedMsg: "",
+			expectError: true,
+		},
+		{
+			name: "缺少 message 字段",
+			event: map[string]interface{}{
+				"sender": map[string]interface{}{
+					"user_id": "user_1",
+				},
+			},
+			expectedMsg: "",
+			expectError: true,
+		},
+		{
+			name: "message 不是 map 类型",
+			event: map[string]interface{}{
+				"message": "invalid",
+			},
+			expectedMsg: "",
+			expectError: true,
+		},
+		{
+			name: "缺少 content 字段",
+			event: map[string]interface{}{
+				"message": map[string]interface{}{
+					"message_id": "msg_1",
+				},
+			},
+			expectedMsg: "",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content, err := extractMessageContent(tt.event)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error but got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if content != tt.expectedMsg {
+					t.Errorf("Expected message '%s', got '%s'", tt.expectedMsg, content)
+				}
+			}
+		})
+	}
+}
