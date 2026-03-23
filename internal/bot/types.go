@@ -4,6 +4,11 @@ import (
 	"time"
 )
 
+// Now 返回当前时间
+func Now() time.Time {
+	return time.Now()
+}
+
 // TaskRecord 任务记录
 type TaskRecord struct {
 	ID         string

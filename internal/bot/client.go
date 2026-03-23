@@ -2,6 +2,8 @@ package bot
 
 import (
 	"fmt"
+
+	lark "github.com/larksuite/oapi-sdk-go/v3"
 )
 
 // LarkClient 飞书客户端封装
@@ -10,33 +12,42 @@ type LarkClient struct {
 	AppID     string
 	AppSecret string
 
-	// 飞书 SDK 客户端（懒加载）
-	// actual SDK client will be initialized later
-	client interface{}
+	// 飞书 SDK 客户端
+	client *lark.Client
 }
 
 // NewLarkClient 创建飞书客户端
-func NewLarkClient(bot *BotClient) (*LarkClient, error) {
-	if bot == nil {
+func NewLarkClient(botClient *BotClient) (*LarkClient, error) {
+	if botClient == nil {
 		return nil, fmt.Errorf("bot 不能为空")
 	}
 
+	c := lark.NewClient(botClient.AppID, botClient.AppSecret)
+
 	return &LarkClient{
-		BotID:     bot.AppID,
-		AppID:     bot.AppID,
-		AppSecret: bot.AppSecret,
+		BotID:     botClient.AppID,
+		AppID:     botClient.AppID,
+		AppSecret: botClient.AppSecret,
+		client:    c,
 	}, nil
 }
 
-// Init 初始化飞书 SDK 客户端
-func (c *LarkClient) Init() error {
-	// 创建飞书客户端
-	// 实际 SDK 初始化将在后续任务中完成
-	return nil
+// GetClient 获取飞书 SDK 客户端
+func (c *LarkClient) GetClient() *lark.Client {
+	return c.client
 }
 
-// SendMessage 发送消息（待实现）
-func (c *LarkClient) SendMessage(chatID, message string) error {
-	// 待实现
-	return nil
+// DebugLog 打印调试日志
+func (c *LarkClient) DebugLog(format string, args ...interface{}) {
+	fmt.Printf("[DEBUG] LarkClient[%s]: "+format+"\n", append([]interface{}{c.BotID}, args...)...)
+}
+
+// LogInfo 打印信息日志
+func (c *LarkClient) LogInfo(format string, args ...interface{}) {
+	fmt.Printf("[INFO] LarkClient[%s]: "+format+"\n", append([]interface{}{c.BotID}, args...)...)
+}
+
+// LogError 打印错误日志
+func (c *LarkClient) LogError(format string, args ...interface{}) {
+	fmt.Printf("[ERROR] LarkClient[%s]: "+format+"\n", append([]interface{}{c.BotID}, args...)...)
 }
