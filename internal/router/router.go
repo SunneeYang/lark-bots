@@ -15,7 +15,7 @@ type MessageHandler interface {
 // MessageRouter 消息路由器
 type MessageRouter struct {
 	registry *bot.BotRegistry
-	handlers map[string]MessageHandler // key: role
+	handlers map[string]MessageHandler // key: role or bot_name
 }
 
 // NewMessageRouter 创建消息路由器
@@ -45,10 +45,14 @@ func (r *MessageRouter) Route(ctx context.Context, event interface{}) error {
 		return fmt.Errorf("未找到机器人: %s", receiverBotID)
 	}
 
-	// 获取对应的 handler
-	handler, exists := r.handlers[receiverBot.Role]
+	// 首先尝试按机器人名称查找 handler（用于支持每个 executor 独立的 handler）
+	handler, exists := r.handlers[receiverBot.Name]
 	if !exists {
-		return fmt.Errorf("未找到角色 '%s' 的处理器", receiverBot.Role)
+		// 如果没有找到，则按角色查找 handler
+		handler, exists = r.handlers[receiverBot.Role]
+		if !exists {
+			return fmt.Errorf("未找到机器人 '%s' (角色: %s) 的处理器", receiverBot.Name, receiverBot.Role)
+		}
 	}
 
 	// 调用 handler
