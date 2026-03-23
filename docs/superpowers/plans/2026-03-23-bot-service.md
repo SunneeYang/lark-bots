@@ -1528,6 +1528,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/yourname/lark-bot-service/internal/bot"
 	"github.com/yourname/lark-bot-service/internal/common"
@@ -1605,15 +1606,32 @@ func (h *DispatcherHandler) Handle(ctx context.Context, event interface{}, bot *
 
 // parseTaskName 从消息中解析任务名
 func (h *DispatcherHandler) parseTaskName(message string) (string, error) {
-	// 简化实现：假设消息格式为 "执行 <taskname>"
-	// 实际需要更复杂的解析逻辑
-	if len(message) < 3 {
-		return "", fmt.Errorf("消息格式错误")
+	// 支持格式：
+	// - "执行 deploy.sh"
+	// - "deploy.sh"
+	// - "deploy.sh --env=prod"
+
+	message = strings.TrimSpace(message)
+
+	// 移除 "执行" 前缀（如果有）
+	if strings.HasPrefix(message, "执行") {
+		message = strings.TrimSpace(message[6:]) // "执行" 是 3 个中文，6 个字节
 	}
 
-	// 提取任务名（简化版）
-	// 实际需要使用正则表达式或更复杂的解析
-	return message, nil
+	// 提取任务名（第一个词）
+	parts := strings.Fields(message)
+	if len(parts) == 0 {
+		return "", fmt.Errorf("消息格式错误，无法解析任务名")
+	}
+
+	taskName := parts[0]
+
+	// 验证任务名不为空
+	if taskName == "" {
+		return "", fmt.Errorf("任务名为空")
+	}
+
+	return taskName, nil
 }
 
 // extractSenderID 从事件中提取发送者 ID
@@ -1899,6 +1917,7 @@ git commit -m "feat: 实现 ExecutorHandler"
 package logger
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -2409,6 +2428,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/yourname/lark-bot-service/internal/bot"
@@ -2539,50 +2559,13 @@ func runStart(cmd *cobra.Command, args []string) {
 
 func parseBotList(botList string) []string {
 	var result []string
-	for _, s := range splitAndTrim(botList, ",") {
-		if s != "" {
-			result = append(result, s)
+	for _, s := range strings.Split(botList, ",") {
+		trimmed := strings.TrimSpace(s)
+		if trimmed != "" {
+			result = append(result, trimmed)
 		}
 	}
 	return result
-}
-
-func splitAndTrim(s, sep string) []string {
-	var result []string
-	for _, part := range splitList(s, sep) {
-		result = append(result, trimSpace(part))
-	}
-	return result
-}
-
-func splitList(s, sep string) []string {
-	if s == "" {
-		return []string{}
-	}
-	var result []string
-	current := ""
-	for i := 0; i < len(s); i++ {
-		if s[i:i+1] == sep {
-			result = append(result, current)
-			current = ""
-		} else {
-			current += s[i : i+1]
-		}
-	}
-	result = append(result, current)
-	return result
-}
-
-func trimSpace(s string) string {
-	start := 0
-	for start < len(s) && s[start:start+1] == " " {
-		start++
-	}
-	end := len(s)
-	for end > start && s[end-1:end] == " " {
-		end--
-	}
-	return s[start:end]
 }
 
 func main() {
