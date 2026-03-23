@@ -1,0 +1,59 @@
+# 飞书机器人服务 - 测试配置
+# 此配置用于本地开发和测试
+
+robots:
+  # 任务分发机器人
+  - name: "test-dispatcher"
+    app_id: "cli_test_dispatcher_123"
+    app_secret: "test_secret_dispatcher_abc"
+    role: "dispatcher"
+
+  # 脚本执行机器人 1
+  - name: "test-executor-1"
+    app_id: "cli_test_executor_1_456"
+    app_secret: "test_secret_executor_1_def"
+    role: "executor"
+    allowed_dispatchers:
+      - "cli_test_dispatcher_123"
+    allowed_scripts:
+      - "/Users/hortor/Documents/work/lark/test/scripts/deploy.sh"
+      - "/Users/hortor/Documents/work/lark/test/scripts/health_check.sh"
+      - "/Users/hortor/Documents/work/lark/test/scripts/backup.sh"
+      - "/Users/hortor/Documents/work/lark/test/scripts/cleanup_logs.sh"
+      - "/Users/hortor/Documents/work/lark/test/scripts/test.sh"
+      - "/Users/hortor/Documents/work/lark/test/scripts/fail.sh"
+
+  # 脚本执行机器人 2 (可选)
+  - name: "test-executor-2"
+    app_id: "cli_test_executor_2_789"
+    app_secret: "test_secret_executor_2_ghi"
+    role: "executor"
+    allowed_dispatchers:
+      - "cli_test_dispatcher_123"
+    allowed_scripts:
+      - "/Users/hortor/Documents/work/lark/test/scripts/health_check.sh"
+      - "/Users/hortor/Documents/work/lark/test/scripts/test.sh"
+
+# 机器人群 ID (测试环境)
+robot_group_id: "oc_test_robot_group_001"
+
+# 任务白名单 - dispatcher 允许分发的任务
+task_whitelist:
+  - "deploy"
+  - "deploy.sh"
+  - "health_check"
+  - "health_check.sh"
+  - "backup"
+  - "backup.sh"
+  - "cleanup_logs"
+  - "cleanup_logs.sh"
+  - "test"
+  - "test.sh"
+  - "fail"
+  - "fail.sh"
+
+# 用户白名单 - 允许发起任务的用户
+user_whitelist:
+  - "test_user_001"
+  - "test_user_002"
+  - "admin_user"
