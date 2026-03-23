@@ -20,18 +20,22 @@ type BotConfig struct {
 	AppID     string `yaml:"app_id"`
 	AppSecret string `yaml:"app_secret"`
 	Role      string `yaml:"role"` // "dispatcher" | "executor"
+	OpenID    string `yaml:"open_id"` // 机器人的 open_id，用于 @ 提及
+
+	// Dispatcher 特有配置
+	AllowedUsers []string `yaml:"allowed_users,omitempty"` // 允许的用户列表
+	AllowedTasks []string `yaml:"allowed_tasks,omitempty"` // 允许的任务列表
 
 	// Executor 特有配置
-	AllowedDispatchers []string `yaml:"allowed_dispatchers,omitempty"`
-	AllowedScripts     []string `yaml:"allowed_scripts,omitempty"`
+	AllowedDispatchers []string          `yaml:"allowed_dispatchers,omitempty"`
+	TaskScripts       map[string]string `yaml:"task_scripts,omitempty"` // 任务名 -> 脚本路径映射
 }
 
 // ServiceConfig 定义服务配置
 type ServiceConfig struct {
-	Bots          []BotConfig `yaml:"bots"`
-	RobotGroupID  string      `yaml:"robot_group_id"`
-	TaskWhiteList []string    `yaml:"task_whitelist"`
-	UserWhiteList []string    `yaml:"user_whitelist"`
+	Bots         []BotConfig `yaml:"bots"`
+	RobotGroupID string      `yaml:"robot_group_id"`
+	UserWhiteList []string    `yaml:"user_whitelist"` // 兼容旧配置，优先级低于 bot 内的配置
 }
 
 // LoadConfig 从指定路径加载配置文件

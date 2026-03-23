@@ -13,6 +13,8 @@ func TestValidateConfig_Valid(t *testing.T) {
 				AppID:     "cli_123",
 				AppSecret: "secret",
 				Role:      "dispatcher",
+				AllowedTasks: []string{"deploy"},
+				AllowedUsers: []string{"user_1"},
 			},
 			{
 				Name:              "executor",
@@ -22,9 +24,7 @@ func TestValidateConfig_Valid(t *testing.T) {
 				AllowedDispatchers: []string{"cli_123"},
 			},
 		},
-		RobotGroupID:  "oc_test",
-		TaskWhiteList: []string{"deploy"},
-		UserWhiteList: []string{"user_1"},
+		RobotGroupID: "oc_test",
 	}
 
 	err := ValidateConfig(cfg)

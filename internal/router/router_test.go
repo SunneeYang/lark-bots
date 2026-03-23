@@ -10,11 +10,13 @@ import (
 
 // MockHandler 用于测试
 type MockHandler struct {
-	Called bool
+	Called      bool
+	ReceivedBot *bot.BotClient
 }
 
 func (m *MockHandler) Handle(ctx context.Context, event interface{}, botClient *bot.BotClient) error {
 	m.Called = true
+	m.ReceivedBot = botClient
 	return nil
 }
 
@@ -23,41 +25,34 @@ func TestMessageRouter_RegisterHandler(t *testing.T) {
 	router := NewMessageRouter(registry)
 
 	mockHandler := &MockHandler{}
-
 	router.RegisterHandler("dispatcher", mockHandler)
-
-	// 验证 handler 已注册
-	// 实际测试在 Route 测试中进行
 }
 
 func TestMessageRouter_Route(t *testing.T) {
 	registry := bot.NewBotRegistry()
 	router := NewMessageRouter(registry)
 
-	// 注册测试机器人
 	testBot := bot.NewBotClient("test", "cli_123", "secret", "dispatcher")
 	registry.Register(testBot)
 
-	// 注册 handler
 	mockHandler := &MockHandler{}
 	router.RegisterHandler("dispatcher", mockHandler)
 
-	// 创建模拟事件
 	event := map[string]interface{}{
-		"receiver": map[string]interface{}{
-			"bot_id": "cli_123",
-		},
+		"content": "hello",
 	}
 
-	// 路由
-	err := router.Route(context.Background(), event)
+	err := router.Route(context.Background(), event, testBot)
 	if err != nil {
 		t.Fatalf("Route failed: %v", err)
 	}
 
-	// 验证 handler 被调用
 	if !mockHandler.Called {
 		t.Error("Expected handler to be called")
+	}
+
+	if mockHandler.ReceivedBot != testBot {
+		t.Errorf("Expected bot %v, got %v", testBot, mockHandler.ReceivedBot)
 	}
 }
 
@@ -65,26 +60,18 @@ func TestMessageRouter_Route_BotNotFound(t *testing.T) {
 	registry := bot.NewBotRegistry()
 	router := NewMessageRouter(registry)
 
-	// 注册 handler
 	mockHandler := &MockHandler{}
 	router.RegisterHandler("dispatcher", mockHandler)
 
-	// 创建不存在的机器人事件
-	event := map[string]interface{}{
-		"receiver": map[string]interface{}{
-			"bot_id": "cli_nonexistent",
-		},
-	}
+	event := map[string]interface{}{}
 
-	// 路由应该失败
-	err := router.Route(context.Background(), event)
+	err := router.Route(context.Background(), event, nil)
 	if err == nil {
-		t.Error("Expected error for nonexistent bot, got nil")
+		t.Error("Expected error for nil bot, got nil")
 	}
 
-	expectedMsg := "未找到机器人"
-	if err.Error()[:len(expectedMsg)] != expectedMsg {
-		t.Errorf("Expected error message to start with '%s', got '%s'", expectedMsg, err.Error())
+	if err.Error() != "机器人不能为空" {
+		t.Errorf("Expected error '机器人不能为空', got '%s'", err.Error())
 	}
 }
 
@@ -92,149 +79,49 @@ func TestMessageRouter_Route_HandlerNotFound(t *testing.T) {
 	registry := bot.NewBotRegistry()
 	router := NewMessageRouter(registry)
 
-	// 注册测试机器人，但不注册对应 handler
 	testBot := bot.NewBotClient("test", "cli_123", "secret", "executor")
 	registry.Register(testBot)
 
-	// 创建模拟事件
-	event := map[string]interface{}{
-		"receiver": map[string]interface{}{
-			"bot_id": "cli_123",
-		},
-	}
+	event := map[string]interface{}{}
 
-	// 路由应该失败（没有 executor handler）
-	err := router.Route(context.Background(), event)
+	err := router.Route(context.Background(), event, testBot)
 	if err == nil {
 		t.Error("Expected error for missing handler, got nil")
 	}
 
-	// 检查错误消息包含关键信息
 	expectedInMsg := "的处理器"
 	if !strings.Contains(err.Error(), expectedInMsg) {
 		t.Errorf("Expected error message to contain '%s', got '%s'", expectedInMsg, err.Error())
 	}
 }
 
-func TestMessageRouter_Route_InvalidEvent(t *testing.T) {
+func TestMessageRouter_Route_ByBotName(t *testing.T) {
 	registry := bot.NewBotRegistry()
 	router := NewMessageRouter(registry)
 
-	// 测试各种无效事件格式
-	invalidEvents := []interface{}{
-		nil,
-		"string",
-		123,
-		map[string]interface{}{},
-		map[string]interface{}{
-			"receiver": "invalid",
-		},
-		map[string]interface{}{
-			"receiver": map[string]interface{}{},
-		},
-		map[string]interface{}{
-			"receiver": map[string]interface{}{
-				"bot_id": 123, // 类型错误
-			},
-		},
+	// 注册两个相同角色的 bot
+	bot1 := bot.NewBotClient("bot-one", "cli_1", "secret", "executor")
+	bot2 := bot.NewBotClient("bot-two", "cli_2", "secret", "executor")
+	registry.Register(bot1)
+	registry.Register(bot2)
+
+	handler1 := &MockHandler{}
+	handler2 := &MockHandler{}
+	router.RegisterHandler("bot-one", handler1)
+	router.RegisterHandler("bot-two", handler2)
+
+	event := map[string]interface{}{}
+
+	router.Route(context.Background(), event, bot1)
+	if !handler1.Called || handler2.Called {
+		t.Error("Expected only handler1 to be called")
 	}
 
-	for i, event := range invalidEvents {
-		err := router.Route(context.Background(), event)
-		if err == nil {
-			t.Errorf("Test case %d: Expected error for invalid event, got nil", i)
-		}
+	handler1.Called = false
+	handler2.Called = false
 
-		expectedMsg := "解析事件失败"
-		if err.Error()[:len(expectedMsg)] != expectedMsg {
-			t.Errorf("Test case %d: Expected error message to start with '%s', got '%s'", i, expectedMsg, err.Error())
-		}
-	}
-}
-
-func TestExtractReceiverBotID(t *testing.T) {
-	tests := []struct {
-		name        string
-		event       interface{}
-		expectedID  string
-		expectError bool
-	}{
-		{
-			name: "valid event",
-			event: map[string]interface{}{
-				"receiver": map[string]interface{}{
-					"bot_id": "cli_123",
-				},
-			},
-			expectedID:  "cli_123",
-			expectError: false,
-		},
-		{
-			name:        "nil event",
-			event:       nil,
-			expectedID:  "",
-			expectError: true,
-		},
-		{
-			name:        "string event",
-			event:       "invalid",
-			expectedID:  "",
-			expectError: true,
-		},
-		{
-			name: "missing receiver field",
-			event: map[string]interface{}{
-				"other": "data",
-			},
-			expectedID:  "",
-			expectError: true,
-		},
-		{
-			name: "receiver is not a map",
-			event: map[string]interface{}{
-				"receiver": "invalid",
-			},
-			expectedID:  "",
-			expectError: true,
-		},
-		{
-			name: "missing bot_id field",
-			event: map[string]interface{}{
-				"receiver": map[string]interface{}{
-					"other": "data",
-				},
-			},
-			expectedID:  "",
-			expectError: true,
-		},
-		{
-			name: "bot_id is not a string",
-			event: map[string]interface{}{
-				"receiver": map[string]interface{}{
-					"bot_id": 123,
-				},
-			},
-			expectedID:  "",
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			botID, err := extractReceiverBotID(tt.event)
-
-			if tt.expectError {
-				if err == nil {
-					t.Error("Expected error, got nil")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Expected no error, got: %v", err)
-				}
-				if botID != tt.expectedID {
-					t.Errorf("Expected bot_id '%s', got '%s'", tt.expectedID, botID)
-				}
-			}
-		})
+	router.Route(context.Background(), event, bot2)
+	if handler1.Called || !handler2.Called {
+		t.Error("Expected only handler2 to be called")
 	}
 }

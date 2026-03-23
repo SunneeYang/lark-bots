@@ -7,14 +7,16 @@ import (
 	"strings"
 
 	"github.com/SunneeYang/lark-bots/internal/bot"
+	"github.com/SunneeYang/lark-bots/internal/common"
 )
 
 // ExecutorHandler 执行机器人处理器
 type ExecutorHandler struct {
 	*BaseHandler
 
-	allowedDispatchers map[string]bool
-	allowedScripts     map[string]bool
+	allowedDispatchers  map[string]bool
+	taskScripts        map[string]string // 任务名 -> 脚本路径
+	dispatcherOpenID   string          // Dispatcher 的 open_id，用于 @ 汇报结果
 }
 
 // NewExecutorHandler 创建执行机器人处理器
@@ -22,7 +24,7 @@ func NewExecutorHandler() *ExecutorHandler {
 	return &ExecutorHandler{
 		BaseHandler:        NewBaseHandler(),
 		allowedDispatchers: make(map[string]bool),
-		allowedScripts:     make(map[string]bool),
+		taskScripts:        make(map[string]string),
 	}
 }
 
@@ -34,68 +36,86 @@ func (h *ExecutorHandler) SetAllowedDispatchers(dispatchers []string) {
 	}
 }
 
-// SetAllowedScripts 设置允许执行的脚本列表
-func (h *ExecutorHandler) SetAllowedScripts(scripts []string) {
-	h.allowedScripts = make(map[string]bool)
-	for _, script := range scripts {
-		h.allowedScripts[script] = true
-	}
+// SetTaskScripts 设置任务脚本映射 (任务名 -> 脚本路径)
+func (h *ExecutorHandler) SetTaskScripts(scripts map[string]string) {
+	h.taskScripts = scripts
+}
+
+// SetDispatcherOpenID 设置 Dispatcher 的 open_id（用于 @ 汇报结果）
+func (h *ExecutorHandler) SetDispatcherOpenID(openID string) {
+	h.dispatcherOpenID = openID
 }
 
 // Handle 处理消息
-func (h *ExecutorHandler) Handle(ctx context.Context, event interface{}, botClient *bot.BotClient) error {
+func (h *ExecutorHandler) Handle(_ context.Context, event interface{}, botClient *bot.BotClient) error {
 	// 解析发送者 bot_id
-	senderBotID, err := extractSenderBotID(event)
+	senderBotID, err := common.ExtractSenderBotID(event)
 	if err != nil {
-		return fmt.Errorf("解析发送者失败: %w", err)
+		senderBotID = "解析失败-" + err.Error()
 	}
+
+	// 解析消息内容
+	rawContent, _ := common.ExtractMessageContent(event)
+	message, _ := common.ParseMessageContent(rawContent)
+
+	// 调试：打印完整事件sender结构
+	fmt.Printf("📨 [%s] 收到消息: senderBotID=%s, content=%s\n", botClient.Name, senderBotID, message)
 
 	// 校验是否来自允许的 dispatcher
 	if !h.allowedDispatchers[senderBotID] {
 		return fmt.Errorf("未授权的 dispatcher: %s", senderBotID)
 	}
 
-	// 解析消息内容
-	message, err := extractMessageContent(event)
+	// 解析任务名
+	taskName, err := h.parseTaskName(message)
 	if err != nil {
-		return fmt.Errorf("解析消息失败: %w", err)
+		return fmt.Errorf("解析任务名失败: %w", err)
 	}
 
-	// 解析脚本路径
-	scriptPath, args, err := h.parseScriptCommand(message)
-	if err != nil {
-		return fmt.Errorf("解析脚本命令失败: %w", err)
-	}
-
-	// 校验脚本是否在白名单
-	if !h.allowedScripts[scriptPath] {
-		return fmt.Errorf("脚本不在白名单中: %s", scriptPath)
+	// 转换任务名到脚本路径
+	scriptPath, ok := h.taskScripts[taskName]
+	if !ok {
+		return fmt.Errorf("任务 %s 未配置", taskName)
 	}
 
 	// 执行脚本
-	output, err := h.executeScript(scriptPath, args)
+	output, err := h.executeScript(scriptPath, nil)
+
+	// 向 dispatcher 汇报结果
+	resultMsg := fmt.Sprintf("任务 [%s] 执行%s", taskName, map[bool]string{true: "成功", false: "失败"}[err == nil])
 	if err != nil {
-		return fmt.Errorf("执行脚本失败: %w", err)
+		resultMsg += fmt.Sprintf(": %v", err)
+	} else {
+		// 截断输出
+		outputLines := strings.Split(strings.TrimSpace(output), "\n")
+		if len(outputLines) > 5 {
+			output = strings.Join(outputLines[:5], "\n") + "\n...(输出已截断)"
+		}
+		resultMsg += fmt.Sprintf("\n输出:\n%s", strings.TrimSpace(output))
 	}
 
-	// TODO: 向 dispatcher 汇报结果
-	_ = output
+	fmt.Printf("📤 [%s] 汇报结果: @%s %s\n", botClient.Name, h.dispatcherOpenID, taskName)
+	if err := h.SendAtToGroup(h.dispatcherOpenID, resultMsg, botClient); err != nil {
+		fmt.Printf("❌ [%s] 汇报结果失败: %v\n", botClient.Name, err)
+	}
 
 	return nil
 }
 
-// parseScriptCommand 解析脚本命令
-func (h *ExecutorHandler) parseScriptCommand(message string) (scriptPath string, args []string, err error) {
-	// 简化实现：假设格式为 "execute <script> [args...]"
-	parts := strings.Fields(message)
-	if len(parts) < 2 || parts[0] != "execute" {
-		return "", nil, fmt.Errorf("命令格式错误，应为: execute <script> [args...]")
+// parseTaskName 解析任务名（格式: @开发服专员 check_logs）
+func (h *ExecutorHandler) parseTaskName(message string) (string, error) {
+	message = strings.TrimSpace(message)
+
+	// 移除 @提及部分（如果有）
+	if strings.HasPrefix(message, "@") {
+		parts := strings.Fields(message)
+		if len(parts) < 2 {
+			return "", fmt.Errorf("消息格式错误")
+		}
+		return parts[1], nil
 	}
 
-	scriptPath = parts[1]
-	args = parts[2:]
-
-	return scriptPath, args, nil
+	return message, nil
 }
 
 // executeScript 执行脚本
@@ -108,26 +128,3 @@ func (h *ExecutorHandler) executeScript(scriptPath string, args []string) (strin
 	return string(output), nil
 }
 
-// extractSenderBotID 从事件中提取发送者 bot_id
-func extractSenderBotID(event interface{}) (string, error) {
-	if eventMap, ok := event.(map[string]interface{}); ok {
-		if sender, ok := eventMap["sender"].(map[string]interface{}); ok {
-			if botID, ok := sender["bot_id"].(string); ok {
-				return botID, nil
-			}
-		}
-	}
-	return "", fmt.Errorf("无法提取 sender.bot_id")
-}
-
-// extractMessageContent 从事件中提取消息内容
-func extractMessageContent(event interface{}) (string, error) {
-	if eventMap, ok := event.(map[string]interface{}); ok {
-		if message, ok := eventMap["message"].(map[string]interface{}); ok {
-			if content, ok := message["content"].(string); ok {
-				return content, nil
-			}
-		}
-	}
-	return "", fmt.Errorf("无法提取 message.content")
-}

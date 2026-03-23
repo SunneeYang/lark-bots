@@ -135,21 +135,12 @@ func TestBotClient_ExecutorConfig(t *testing.T) {
 	bot := NewBotClient("executor-bot", "cli_456", "secret456", "executor")
 
 	bot.AllowedDispatchers = []string{"cli_123", "cli_789"}
-	bot.AllowedScripts = []string{"/opt/scripts/deploy.sh", "/opt/scripts/restart.sh"}
 
 	if len(bot.AllowedDispatchers) != 2 {
 		t.Errorf("Expected 2 allowed dispatchers, got %d", len(bot.AllowedDispatchers))
 	}
 
-	if len(bot.AllowedScripts) != 2 {
-		t.Errorf("Expected 2 allowed scripts, got %d", len(bot.AllowedScripts))
-	}
-
 	if bot.AllowedDispatchers[0] != "cli_123" {
 		t.Errorf("Expected first dispatcher 'cli_123', got '%s'", bot.AllowedDispatchers[0])
-	}
-
-	if bot.AllowedScripts[1] != "/opt/scripts/restart.sh" {
-		t.Errorf("Expected second script '/opt/scripts/restart.sh', got '%s'", bot.AllowedScripts[1])
 	}
 }

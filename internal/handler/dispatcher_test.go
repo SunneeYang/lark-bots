@@ -5,13 +5,15 @@ import (
 	"testing"
 
 	"github.com/SunneeYang/lark-bots/internal/bot"
+	"github.com/SunneeYang/lark-bots/internal/common"
 )
 
 func TestDispatcherHandler_HandleUserMessage(t *testing.T) {
 	handler := NewDispatcherHandler()
 
 	// 设置白名单
-	handler.SetWhiteLists([]string{"user_1"}, []string{"deploy.sh", "restart.sh"})
+	handler.SetAllowedUsers([]string{"user_1"})
+	handler.SetAllowedTasks([]string{"deploy.sh", "restart.sh"})
 
 	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
 
@@ -35,7 +37,8 @@ func TestDispatcherHandler_UserNotInWhitelist(t *testing.T) {
 	handler := NewDispatcherHandler()
 
 	// 设置白名单，不包含 user_2
-	handler.SetWhiteLists([]string{"user_1"}, []string{"deploy.sh"})
+	handler.SetAllowedUsers([]string{"user_1"})
+	handler.SetAllowedTasks([]string{"deploy.sh"})
 
 	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
 
@@ -58,7 +61,8 @@ func TestDispatcherHandler_TaskNotInWhitelist(t *testing.T) {
 	handler := NewDispatcherHandler()
 
 	// 设置白名单，不包含 test.sh
-	handler.SetWhiteLists([]string{"user_1"}, []string{"deploy.sh"})
+	handler.SetAllowedUsers([]string{"user_1"})
+	handler.SetAllowedTasks([]string{"deploy.sh"})
 
 	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
 
@@ -138,16 +142,14 @@ func TestDispatcherHandler_ParseTaskName(t *testing.T) {
 	}
 }
 
-func TestDispatcherHandler_SetWhiteLists(t *testing.T) {
+func TestDispatcherHandler_SetAllowedUsers(t *testing.T) {
 	handler := NewDispatcherHandler()
 
 	users := []string{"user_1", "user_2"}
-	tasks := []string{"deploy.sh", "restart.sh"}
-
-	handler.SetWhiteLists(users, tasks)
+	handler.SetAllowedUsers(users)
 
 	// 验证白名单已设置
-	// 由于 userWhiteList 和 taskWhiteList 是私有字段，我们通过 Handle 方法间接验证
+	// 由于 userWhiteList 是私有字段，我们通过 Handle 方法间接验证
 	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
 
 	// 测试用户在白名单中
@@ -222,7 +224,7 @@ func TestExtractSenderID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			userID, err := extractSenderID(tt.event)
+			userID, err := common.ExtractSenderID(tt.event)
 
 			if tt.expectError {
 				if err == nil {
@@ -295,7 +297,7 @@ func TestDispatcherExtractMessageContent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			content, err := extractMessageContent(tt.event)
+			content, err := common.ExtractMessageContent(tt.event)
 
 			if tt.expectError {
 				if err == nil {

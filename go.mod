@@ -1,6 +1,6 @@
 module github.com/SunneeYang/lark-bots
 
-go 1.21
+go 1.26
 
 require (
 	github.com/larksuite/oapi-sdk-go/v3 v3.5.3

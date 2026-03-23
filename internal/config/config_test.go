@@ -47,12 +47,12 @@ bots:
     app_id: "cli_123"
     app_secret: "secret"
     role: "dispatcher"
+    allowed_tasks:
+      - "deploy"
+      - "restart"
+    allowed_users:
+      - "user_1"
 robot_group_id: "oc_xxx"
-task_whitelist:
-  - "deploy"
-  - "restart"
-user_whitelist:
-  - "user_1"
 `
 
 	var cfg ServiceConfig
@@ -70,8 +70,8 @@ user_whitelist:
 		t.Errorf("Expected RobotGroupID 'oc_xxx', got '%s'", cfg.RobotGroupID)
 	}
 
-	if len(cfg.TaskWhiteList) != 2 {
-		t.Errorf("Expected 2 tasks in whitelist, got %d", len(cfg.TaskWhiteList))
+	if len(cfg.Bots[0].AllowedTasks) != 2 {
+		t.Errorf("Expected 2 tasks in allowed_tasks, got %d", len(cfg.Bots[0].AllowedTasks))
 	}
 }
 
@@ -86,20 +86,18 @@ bots:
     app_id: "cli_123"
     app_secret: "secret"
     role: "dispatcher"
+    allowed_tasks:
+      - "deploy"
+      - "restart"
+    allowed_users:
+      - "user_1"
   - name: "executor"
     app_id: "cli_456"
     app_secret: "secret2"
     role: "executor"
     allowed_dispatchers:
       - "cli_123"
-    allowed_scripts:
-      - "/opt/scripts/test.sh"
 robot_group_id: "oc_xxx"
-task_whitelist:
-  - "deploy"
-  - "restart"
-user_whitelist:
-  - "user_1"
 `
 
 	err := os.WriteFile(configPath, []byte(yamlContent), 0644)
@@ -130,8 +128,8 @@ user_whitelist:
 		t.Errorf("Expected RobotGroupID 'oc_xxx', got '%s'", cfg.RobotGroupID)
 	}
 
-	if len(cfg.TaskWhiteList) != 2 {
-		t.Errorf("Expected 2 tasks in whitelist, got %d", len(cfg.TaskWhiteList))
+	if len(cfg.Bots[0].AllowedTasks) != 2 {
+		t.Errorf("Expected 2 tasks in allowed_tasks, got %d", len(cfg.Bots[0].AllowedTasks))
 	}
 }
 

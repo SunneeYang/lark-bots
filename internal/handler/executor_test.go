@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/SunneeYang/lark-bots/internal/bot"
+	"github.com/SunneeYang/lark-bots/internal/common"
 )
 
 func TestExecutorHandler_VerifyDispatcher(t *testing.T) {
@@ -78,13 +79,16 @@ func TestExecutorHandler_SetAllowedDispatchers(t *testing.T) {
 	}
 }
 
-func TestExecutorHandler_SetAllowedScripts(t *testing.T) {
+func TestExecutorHandler_SetTaskScripts(t *testing.T) {
 	handler := NewExecutorHandler()
 
-	scripts := []string{"/opt/scripts/deploy.sh", "/opt/scripts/test.sh"}
-	handler.SetAllowedScripts(scripts)
+	taskScripts := map[string]string{
+		"deploy":     "/opt/scripts/deploy.sh",
+		"check_logs": "/opt/scripts/cleanup_logs.sh",
+	}
+	handler.SetTaskScripts(taskScripts)
 
-	// 验证设置成功（通过后续的 Handle 测试验证）
+	// 验证设置成功
 	testBot := bot.NewBotClient("executor", "cli_456", "secret", "executor")
 
 	handler.SetAllowedDispatchers([]string{"cli_123"})
@@ -94,7 +98,7 @@ func TestExecutorHandler_SetAllowedScripts(t *testing.T) {
 			"bot_id": "cli_123",
 		},
 		"message": map[string]interface{}{
-			"content": "execute /opt/scripts/deploy.sh",
+			"content": "deploy",
 		},
 	}
 
@@ -104,45 +108,37 @@ func TestExecutorHandler_SetAllowedScripts(t *testing.T) {
 	}
 }
 
-func TestExecutorHandler_ParseScriptCommand(t *testing.T) {
+func TestExecutorHandler_ParseTaskName(t *testing.T) {
 	handler := NewExecutorHandler()
 
 	tests := []struct {
-		name           string
-		message        string
-		expectedScript string
-		expectedArgs   []string
-		expectError    bool
+		name         string
+		message      string
+		expectedTask string
+		expectError  bool
 	}{
 		{
-			name:           "valid command with args",
-			message:        "execute /opt/scripts/test.sh arg1 arg2",
-			expectedScript: "/opt/scripts/test.sh",
-			expectedArgs:   []string{"arg1", "arg2"},
-			expectError:    false,
+			name:         "带 @ 提及",
+			message:      "@开发服专员 check_logs",
+			expectedTask: "check_logs",
+			expectError:  false,
 		},
 		{
-			name:           "valid command without args",
-			message:        "execute /opt/scripts/test.sh",
-			expectedScript: "/opt/scripts/test.sh",
-			expectedArgs:   []string{},
-			expectError:    false,
+			name:         "纯任务名",
+			message:      "deploy",
+			expectedTask: "deploy",
+			expectError:  false,
 		},
 		{
-			name:        "invalid command - missing execute",
-			message:     "/opt/scripts/test.sh",
-			expectError: true,
-		},
-		{
-			name:        "invalid command - missing script",
-			message:     "execute",
+			name:        "只有 @ 提及",
+			message:     "@开发服专员",
 			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			scriptPath, args, err := handler.parseScriptCommand(tt.message)
+			taskName, err := handler.parseTaskName(tt.message)
 
 			if tt.expectError {
 				if err == nil {
@@ -152,11 +148,8 @@ func TestExecutorHandler_ParseScriptCommand(t *testing.T) {
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)
 				}
-				if scriptPath != tt.expectedScript {
-					t.Errorf("Expected script path '%s', got '%s'", tt.expectedScript, scriptPath)
-				}
-				if len(args) != len(tt.expectedArgs) {
-					t.Errorf("Expected %d args, got %d", len(tt.expectedArgs), len(args))
+				if taskName != tt.expectedTask {
+					t.Errorf("Expected task '%s', got '%s'", tt.expectedTask, taskName)
 				}
 			}
 		})
@@ -196,7 +189,7 @@ func TestExtractSenderBotID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			botID, err := extractSenderBotID(tt.event)
+			botID, err := common.ExtractSenderBotID(tt.event)
 
 			if tt.expectError {
 				if err == nil {
@@ -247,7 +240,7 @@ func TestExtractMessageContentFromExecutor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			content, err := extractMessageContent(tt.event)
+			content, err := common.ExtractMessageContent(tt.event)
 
 			if tt.expectError {
 				if err == nil {

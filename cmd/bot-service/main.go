@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -14,8 +17,8 @@ import (
 	"github.com/SunneeYang/lark-bots/internal/handler"
 	"github.com/SunneeYang/lark-bots/internal/logger"
 	"github.com/SunneeYang/lark-bots/internal/router"
+	larkevent "github.com/larksuite/oapi-sdk-go/v3/event"
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
-	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/larksuite/oapi-sdk-go/v3/ws"
 	"github.com/spf13/cobra"
 )
@@ -34,11 +37,20 @@ type UnifiedExecutorHandler struct {
 
 // Handle 实现 MessageHandler 接口
 func (h *UnifiedExecutorHandler) Handle(ctx context.Context, event interface{}, botClient *bot.BotClient) error {
+	fmt.Printf("📨 [%s] UnifiedExecutorHandler 收到事件\n", botClient.Name)
 	executorHandler, exists := h.handlers[botClient.Name]
 	if !exists {
-		return fmt.Errorf("未找到 executor handler: %s", botClient.Name)
+		return fmt.Errorf("未找到 executor handler: %s (可用: %v)", botClient.Name, mapKeys(h.handlers))
 	}
 	return executorHandler.Handle(ctx, event, botClient)
+}
+
+func mapKeys(m map[string]*handler.ExecutorHandler) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 var (
@@ -58,6 +70,13 @@ var startCmd = &cobra.Command{
 	Run:   runStart,
 }
 
+var fetchOpenIDCmd = &cobra.Command{
+	Use:   "fetch-openid [bot names...]",
+	Short: "获取指定机器人的 OpenID",
+	Args:  cobra.MinimumNArgs(1),
+	Run:   runFetchOpenID,
+}
+
 func init() {
 	cobra.OnInitialize(initConfig)
 
@@ -65,7 +84,10 @@ func init() {
 	startCmd.Flags().StringVarP(&bots, "bots", "b", "", "要启动的机器人列表（逗号分隔）")
 	startCmd.Flags().Bool("all", false, "启动所有机器人")
 
+	fetchOpenIDCmd.Flags().StringP("config", "c", "configs/bots.yaml", "配置文件路径")
+
 	rootCmd.AddCommand(startCmd)
+	rootCmd.AddCommand(fetchOpenIDCmd)
 }
 
 func initConfig() {}
@@ -103,15 +125,17 @@ func runStart(cmd *cobra.Command, args []string) {
 	fmt.Println("\n📝 注册机器人:")
 	for _, botCfg := range cfg.Bots {
 		botClient := bot.NewBotClient(botCfg.Name, botCfg.AppID, botCfg.AppSecret, botCfg.Role)
+		botClient.OpenID = botCfg.OpenID
+		// 为每个机器人初始化飞书 SDK 客户端
+		botClient.InitLarkClient()
 		if botCfg.Role == "executor" {
 			botClient.AllowedDispatchers = botCfg.AllowedDispatchers
-			botClient.AllowedScripts = botCfg.AllowedScripts
 		}
 		if err := globalRegistry.Register(botClient); err != nil {
 			fmt.Printf("❌ 注册机器人失败: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("   ✅ %s (角色: %s, AppID: %s)\n", botCfg.Name, botCfg.Role, botCfg.AppID)
+		fmt.Printf("   ✅ %s (角色: %s, AppID: %s, OpenID: %s)\n", botCfg.Name, botCfg.Role, botCfg.AppID, botCfg.OpenID)
 	}
 
 	// 3. 过滤要启动的机器人
@@ -146,16 +170,65 @@ func runStart(cmd *cobra.Command, args []string) {
 	fmt.Println("\n📋 注册消息处理器:")
 
 	dispatcherHandler := handler.NewDispatcherHandler()
-	dispatcherHandler.SetWhiteLists(cfg.UserWhiteList, cfg.TaskWhiteList)
+	dispatcherHandler.SetRobotGroupID(cfg.RobotGroupID)
 	globalRouter.RegisterHandler("dispatcher", dispatcherHandler)
 	fmt.Println("   ✅ dispatcher 处理器注册成功")
+
+	// 配置 dispatcher、executor 相关
+	executorBots := make(map[string]string)
+	var taskScripts map[string]string
+	var executorOpenID string
+	var dispatcherOpenID string
+	var dispatcherCfg *config.BotConfig
+	for _, botCfg := range cfg.Bots {
+		if botCfg.Role == "dispatcher" {
+			dispatcherCfg = &botCfg
+			if botCfg.OpenID != "" {
+				dispatcherOpenID = botCfg.OpenID
+			}
+		}
+		if botCfg.Role == "executor" {
+			executorBots[botCfg.Name] = botCfg.Name
+			if botCfg.OpenID != "" {
+				executorOpenID = botCfg.OpenID
+			}
+			if botCfg.TaskScripts != nil {
+				taskScripts = botCfg.TaskScripts
+			}
+		}
+	}
+
+	// 设置 dispatcher 的用户和任务白名单
+	if dispatcherCfg != nil {
+		fmt.Printf("📋 加载 dispatcher 配置: allowed_users=%v, allowed_tasks=%v\n",
+			dispatcherCfg.AllowedUsers, dispatcherCfg.AllowedTasks)
+		dispatcherHandler.SetAllowedUsers(dispatcherCfg.AllowedUsers)
+		dispatcherHandler.SetAllowedTasks(dispatcherCfg.AllowedTasks)
+	} else {
+		fmt.Println("⚠️ 未找到 dispatcher 配置")
+	}
+
+	// 设置执行机器人 open_id
+	if executorOpenID != "" {
+		dispatcherHandler.SetExecutorOpenID(executorOpenID)
+		fmt.Printf("📋 执行机器人 open_id: %s\n", executorOpenID)
+	} else {
+		fmt.Println("⚠️ 未配置执行机器人 open_id，无法 @ 提及")
+	}
+	dispatcherHandler.SetExecutorBots(executorBots)
+	if taskScripts != nil {
+		dispatcherHandler.SetTaskScripts(taskScripts)
+	}
 
 	executorHandlers := make(map[string]*handler.ExecutorHandler)
 	for _, botCfg := range cfg.Bots {
 		if botCfg.Role == "executor" {
 			executorHandler := handler.NewExecutorHandler()
 			executorHandler.SetAllowedDispatchers(botCfg.AllowedDispatchers)
-			executorHandler.SetAllowedScripts(botCfg.AllowedScripts)
+			executorHandler.SetTaskScripts(botCfg.TaskScripts)
+			if dispatcherOpenID != "" {
+				executorHandler.SetDispatcherOpenID(dispatcherOpenID)
+			}
 			executorHandlers[botCfg.Name] = executorHandler
 			fmt.Printf("   ✅ executor 处理器注册成功 (bot: %s)\n", botCfg.Name)
 		}
@@ -197,8 +270,9 @@ func startBotWSClient(ctx context.Context, botClient *bot.BotClient) {
 	// 创建事件分发器
 	evtDispatcher := dispatcher.NewEventDispatcher("", "")
 
-	// 注册消息接收处理器
-	evtDispatcher.OnP2MessageReceiveV1(func(c context.Context, event *larkim.P2MessageReceiveV1) error {
+	// 统一处理 im.message.receive_v1 事件（同时覆盖 P1 和 P2）
+	// 根据 payload 结构判断是 P1（私聊/群聊普通消息）还是 P2（@机器人消息）
+	evtDispatcher.OnCustomizedEvent("im.message.receive_v1", func(c context.Context, event *larkevent.EventReq) error {
 		return handleMessageReceive(c, event, botClient)
 	})
 
@@ -217,88 +291,110 @@ func startBotWSClient(ctx context.Context, botClient *bot.BotClient) {
 	}
 }
 
-// handleMessageReceive 处理飞书消息接收事件
-func handleMessageReceive(ctx context.Context, msgEvent *larkim.P2MessageReceiveV1, botClient *bot.BotClient) error {
+// handleMessageReceive 处理飞书消息接收事件（统一处理 P1 和 P2 格式）
+// P1: 私聊/群聊普通消息；P2: @机器人消息
+func handleMessageReceive(ctx context.Context, req *larkevent.EventReq, botClient *bot.BotClient) error {
 	// 打印事件详情
 	fmt.Printf("\n========================================\n")
 	fmt.Printf("📨 收到飞书消息事件 [%s]\n", botClient.Name)
 	fmt.Printf("========================================\n")
 
-	// 获取 tenant_key
 	tenantKey := ""
-	if msgEvent.Event != nil && msgEvent.Event.Sender != nil && msgEvent.Event.Sender.TenantKey != nil {
-		tenantKey = *msgEvent.Event.Sender.TenantKey
+	if h := req.Header["Tenant-Key"]; len(h) > 0 {
+		tenantKey = h[0]
 	}
 	fmt.Printf("🏢 TenantKey: %s\n", tenantKey)
 	fmt.Printf("📦 AppID: %s\n", botClient.AppID)
 
-	// 获取消息详情
-	if msgEvent.Event != nil && msgEvent.Event.Message != nil {
-		msg := msgEvent.Event.Message
+	// 解析原始 JSON，判断是 P1 还是 P2 格式
+	var raw map[string]interface{}
+	if err := json.Unmarshal(req.Body, &raw); err != nil {
+		return fmt.Errorf("解析事件 JSON 失败: %w", err)
+	}
 
-		messageID := getStringPtr(msg.MessageId)
-		chatID := getStringPtr(msg.ChatId)
-		chatType := getStringPtr(msg.ChatType)
-		content := getStringPtr(msg.Content)
-		msgType := getStringPtr(msg.MessageType)
+	event, ok := raw["event"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("事件中无 event 字段")
+	}
 
-		fmt.Printf("\n💬 消息详情:\n")
-		fmt.Printf("   - 消息ID: %s\n", messageID)
-		fmt.Printf("   - 会话ID: %s (%s)\n", chatID, chatType)
-		fmt.Printf("   - 消息类型: %s\n", msgType)
-		fmt.Printf("   - 内容: %s\n", truncateString(content, 200))
+	var senderID, messageID, chatID, chatType, msgType, content string
 
-		// 获取发送者信息
-		if msgEvent.Event.Sender != nil {
-			sender := msgEvent.Event.Sender
-			senderID := ""
-			if sender.SenderId != nil {
-				if sender.SenderId.OpenId != nil {
-					senderID = *sender.SenderId.OpenId
-				} else if sender.SenderId.UserId != nil {
-					senderID = *sender.SenderId.UserId
-				}
+	// P2 格式: event.sender + event.message（@机器人消息）
+	if sender, ok := event["sender"].(map[string]interface{}); ok {
+		if senderIDMap, ok := sender["sender_id"].(map[string]interface{}); ok {
+			if openID, ok := senderIDMap["open_id"].(string); ok {
+				senderID = openID
 			}
-			senderType := getStringPtr(sender.SenderType)
-			fmt.Printf("   - 发送者: %s (%s)\n", senderID, senderType)
-
-			// 创建任务记录
-			taskRecord := &bot.TaskRecord{
-				TaskName:  "message_receive",
-				User:      senderID,
-				StartTime: bot.Now(),
+		}
+		if msg, ok := event["message"].(map[string]interface{}); ok {
+			messageID, _ = msg["message_id"].(string)
+			chatID, _ = msg["chat_id"].(string)
+			chatType, _ = msg["chat_type"].(string)
+			msgType, _ = msg["message_type"].(string)
+			if c, ok := msg["content"].(string); ok {
+				content = c
 			}
-
-			// 构建事件数据传递给路由
-			handlerEvent := map[string]interface{}{
-				"message_id": messageID,
-				"chat_id":    chatID,
-				"content":    content,
-				"msg_type":   msgType,
-				"sender":     senderID,
-				"sender_type": senderType,
-				"app_id":    botClient.AppID,
-				"tenant_key": tenantKey,
-			}
-
-			fmt.Printf("   - 目标机器人: %s (%s)\n", botClient.Name, botClient.Role)
-			taskRecord.Dispatcher = botClient.Name
-			taskRecord.Executor = botClient.Name
-
-			// 路由到对应的处理器
-			if err := globalRouter.Route(ctx, handlerEvent); err != nil {
-				fmt.Printf("❌ 路由消息失败: %v\n", err)
-				taskRecord.Status = "failed"
-				taskRecord.Error = err.Error()
-			} else {
-				fmt.Println("✅ 消息处理成功")
-				taskRecord.Status = "completed"
-			}
-
-			// 记录任务
-			globalTaskLogger.CreateTask(taskRecord)
+		}
+	} else {
+		// P1 格式: event.open_id + event.open_chat_id（所有消息）
+		senderID, _ = event["open_id"].(string)
+		messageID, _ = event["open_message_id"].(string)
+		chatID, _ = event["open_chat_id"].(string)
+		chatType, _ = event["chat_type"].(string)
+		msgType, _ = event["msg_type"].(string)
+		if text, ok := event["text"].(string); ok {
+			content = fmt.Sprintf(`{"text":"%s"}`, text)
 		}
 	}
+
+	fmt.Printf("\n💬 消息详情:\n")
+	fmt.Printf("   - 消息ID: %s\n", messageID)
+	fmt.Printf("   - 会话ID: %s (%s)\n", chatID, chatType)
+	fmt.Printf("   - 消息类型: %s\n", msgType)
+	fmt.Printf("   - 内容: %s\n", truncateString(content, 200))
+	fmt.Printf("   - 发送者: %s\n", senderID)
+
+	// 构建事件数据传递给路由
+	handlerEvent := map[string]interface{}{
+		"message": map[string]interface{}{
+			"message_id": messageID,
+			"chat_id":    chatID,
+			"chat_type":  chatType,
+			"content":    content,
+			"msg_type":   msgType,
+		},
+		"sender": map[string]interface{}{
+			"sender_id": map[string]interface{}{
+				"open_id": senderID,
+			},
+		},
+		"app_id":     botClient.AppID,
+		"tenant_key": tenantKey,
+	}
+
+	// 创建任务记录
+	taskRecord := &bot.TaskRecord{
+		TaskName:  "message_receive",
+		User:      senderID,
+		StartTime: bot.Now(),
+	}
+
+	fmt.Printf("   - 目标机器人: %s (%s)\n", botClient.Name, botClient.Role)
+	taskRecord.Dispatcher = botClient.Name
+	taskRecord.Executor = botClient.Name
+
+	// 路由到对应的处理器
+	if err := globalRouter.Route(ctx, handlerEvent, botClient); err != nil {
+		fmt.Printf("❌ 路由消息失败: %v\n", err)
+		taskRecord.Status = "failed"
+		taskRecord.Error = err.Error()
+	} else {
+		fmt.Println("✅ 消息处理成功")
+		taskRecord.Status = "completed"
+	}
+
+	// 记录任务
+	globalTaskLogger.CreateTask(taskRecord)
 
 	fmt.Printf("========================================\n\n")
 	return nil
@@ -327,4 +423,119 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// botInfoResponse 飞书 bot info API 响应
+type botInfoResponse struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+	Bot  struct {
+		AppID          string `json:"app_id"`
+		AppName        string `json:"app_name"`
+		OpenID         string `json:"open_id"`
+		BotName        string `json:"bot_name"`
+		ActivateStatus int    `json:"activate_status"`
+	} `json:"bot"`
+}
+
+func runFetchOpenID(cmd *cobra.Command, args []string) {
+	fmt.Println("========================================")
+	fmt.Println("       获取机器人 OpenID")
+	fmt.Println("========================================")
+
+	configPath, _ := cmd.Flags().GetString("config")
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		fmt.Printf("❌ 加载配置失败: %v\n", err)
+		os.Exit(1)
+	}
+
+	targetNames := make(map[string]bool)
+	for _, name := range args {
+		targetNames[name] = true
+	}
+
+	var bots []config.BotConfig
+	for _, b := range cfg.Bots {
+		if targetNames[b.Name] {
+			bots = append(bots, b)
+		}
+	}
+
+	if len(bots) == 0 {
+		fmt.Printf("❌ 未找到匹配的机器人: %v\n", args)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n📋 正在获取 %d 个机器人的 OpenID:\n\n", len(bots))
+
+	for _, botCfg := range bots {
+		openID, err := fetchBotOpenID(botCfg.AppID, botCfg.AppSecret)
+		if err != nil {
+			fmt.Printf("  ❌ %s (%s): 获取失败 - %v\n", botCfg.Name, botCfg.AppID, err)
+		} else {
+			fmt.Printf("  ✅ %s: %s\n", botCfg.Name, openID)
+		}
+	}
+
+	fmt.Println("\n========================================")
+	fmt.Println("请将获取的 OpenID 填入配置文件的 open_id 字段")
+	fmt.Println("========================================")
+}
+
+type tokenResp struct {
+	Code              int    `json:"code"`
+	TenantAccessToken string `json:"tenant_access_token"`
+}
+
+func fetchBotOpenID(appID, appSecret string) (string, error) {
+	// 获取 tenant_access_token
+	tokenReqBody := map[string]string{"app_id": appID, "app_secret": appSecret}
+	tokenReqJSON, _ := json.Marshal(tokenReqBody)
+	req, _ := http.NewRequest("POST", "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+		strings.NewReader(string(tokenReqJSON)))
+	req.Header.Set("Content-Type", "application/json")
+
+	httpClient := &http.Client{}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("请求 token 失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var token tokenResp
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+	if err := json.Unmarshal(body, &token); err != nil {
+		return "", fmt.Errorf("解析 token 响应失败: %w, body: %s", err, string(body))
+	}
+	if token.Code != 0 {
+		return "", fmt.Errorf("token API 错误: code=%d", token.Code)
+	}
+
+	// 调用 bot info API
+	botReq, _ := http.NewRequest("GET", "https://open.feishu.cn/open-apis/bot/v3/info", nil)
+	botReq.Header.Set("Authorization", "Bearer "+token.TenantAccessToken)
+
+	botResp, err := httpClient.Do(botReq)
+	if err != nil {
+		return "", fmt.Errorf("请求 bot info 失败: %w", err)
+	}
+	defer botResp.Body.Close()
+
+	botBody, _ := io.ReadAll(io.LimitReader(botResp.Body, 2048))
+
+	var botInfo botInfoResponse
+	if err := json.Unmarshal(botBody, &botInfo); err != nil {
+		return "", fmt.Errorf("解析 bot info 响应失败: %w", err)
+	}
+
+	if botInfo.Code != 0 {
+		return "", fmt.Errorf("bot info API 错误: code=%d, msg=%s", botInfo.Code, botInfo.Msg)
+	}
+
+	if botInfo.Bot.OpenID == "" {
+		return "", fmt.Errorf("bot open_id 为空，请确认机器人在飞书开放平台已启用机器人功能")
+	}
+
+	return botInfo.Bot.OpenID, nil
 }

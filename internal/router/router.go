@@ -32,18 +32,13 @@ func (r *MessageRouter) RegisterHandler(role string, handler MessageHandler) {
 }
 
 // Route 路由事件到对应的处理器
-func (r *MessageRouter) Route(ctx context.Context, event interface{}) error {
-	// 解析事件获取接收者 bot_id
-	receiverBotID, err := extractReceiverBotID(event)
-	if err != nil {
-		return fmt.Errorf("解析事件失败: %w", err)
+func (r *MessageRouter) Route(ctx context.Context, event interface{}, receiverBot *bot.BotClient) error {
+	if receiverBot == nil {
+		return fmt.Errorf("机器人不能为空")
 	}
 
-	// 获取接收机器人
-	receiverBot := r.registry.GetByAppID(receiverBotID)
-	if receiverBot == nil {
-		return fmt.Errorf("未找到机器人: %s", receiverBotID)
-	}
+	// 打印路由日志
+	fmt.Printf("   🔀 路由到: %s (%s)\n", receiverBot.Name, receiverBot.Role)
 
 	// 首先尝试按机器人名称查找 handler（用于支持每个 executor 独立的 handler）
 	handler, exists := r.handlers[receiverBot.Name]
@@ -57,17 +52,4 @@ func (r *MessageRouter) Route(ctx context.Context, event interface{}) error {
 
 	// 调用 handler
 	return handler.Handle(ctx, event, receiverBot)
-}
-
-// extractReceiverBotID 从事件中提取接收者 bot_id
-func extractReceiverBotID(event interface{}) (string, error) {
-	// 简化实现，实际需要解析飞书事件结构
-	if eventMap, ok := event.(map[string]interface{}); ok {
-		if receiver, ok := eventMap["receiver"].(map[string]interface{}); ok {
-			if botID, ok := receiver["bot_id"].(string); ok {
-				return botID, nil
-			}
-		}
-	}
-	return "", fmt.Errorf("无法提取 receiver.bot_id")
 }
