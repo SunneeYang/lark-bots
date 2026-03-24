@@ -9,7 +9,8 @@
       "program": "${workspaceFolder}/cmd/bot-service",
       "args": ["start", "--config", "configs/bots.yaml"],
       "env": {
-        "GOPATH": "${workspaceFolder}/.gopath"
+        "GOPATH": "${workspaceFolder}/.gopath",
+        "GLM_API_KEY": "${env:GLM_API_KEY}"
       },
       "cwd": "${workspaceFolder}"
     },
