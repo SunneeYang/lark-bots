@@ -30,6 +30,12 @@ var (
 	globalRouter     *router.MessageRouter
 )
 
+// MessagePoller 消息轮询器接口
+type MessagePoller interface {
+	Start(ctx context.Context)
+	Stop()
+}
+
 // UnifiedExecutorHandler 统一的 executor handler，根据 bot 名称路由到具体的 handler
 type UnifiedExecutorHandler struct {
 	handlers map[string]*handler.ExecutorHandler
@@ -212,15 +218,56 @@ func runStart(cmd *cobra.Command, args []string) {
 	unifiedExecutorHandler := &UnifiedExecutorHandler{handlers: executorHandlers}
 	globalRouter.RegisterHandler("executor", unifiedExecutorHandler)
 
-	// 6. 为每个机器人创建 WebSocket 客户端并启动
+	// 6. 启动 executor 消息轮询器
+	fmt.Println("\n🔄 启动消息轮询器:")
+	var pollers []MessagePoller
+	for _, botCfg := range cfg.Bots {
+		if botCfg.Role == "executor" {
+			// 获取 executor 的 BotClient
+			var executorBot *bot.BotClient
+			for _, bc := range activeBots {
+				if bc.Name == botCfg.Name {
+					executorBot = bc
+					break
+				}
+			}
+			if executorBot == nil {
+				continue
+			}
+
+			// 将 []string 转换为 map[string]bool
+			dispatchersMap := make(map[string]bool)
+			for _, d := range botCfg.AllowedDispatchers {
+				dispatchersMap[d] = true
+			}
+
+			// 创建轮询器
+			poller := handler.NewMessagePoller(
+				executorBot,
+				cfg.RobotGroupID,
+				dispatchersMap,
+				botCfg.TaskScripts,
+				1*time.Second, // 每秒轮询一次
+			)
+			pollers = append(pollers, poller)
+			fmt.Printf("   ✅ %s 轮询器已创建\n", botCfg.Name)
+		}
+	}
+
+	// 7. 为每个机器人创建 WebSocket 客户端并启动
 	fmt.Println("\n🔌 建立飞书 WebSocket 连接:")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// 启动所有轮询器
+	for _, poller := range pollers {
+		poller.Start(ctx)
+	}
+
 	for _, botClient := range activeBots {
 		go startBotWSClient(ctx, botClient)
-		fmt.Printf("   🌐 %s 连接中...\n", botClient.Name)
+		fmt.Printf("   🌐 %s WebSocket 连接中...\n", botClient.Name)
 	}
 
 	fmt.Println("\n========================================")
@@ -229,13 +276,19 @@ func runStart(cmd *cobra.Command, args []string) {
 	fmt.Println("\n⏳ 正在监听飞书事件...")
 	fmt.Println("提示: 按 Ctrl+C 退出")
 
-	// 7. 等待中断信号
+	// 8. 等待中断信号
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
 
 	fmt.Println("\n👋 正在关闭服务...")
 	cancel()
+
+	// 停止所有轮询器
+	for _, poller := range pollers {
+		poller.Stop()
+	}
+
 	time.Sleep(2 * time.Second) // 等待连接关闭
 	fmt.Println("✅ 服务已关闭")
 }
@@ -279,12 +332,20 @@ func handleMessageReceive(ctx context.Context, req *larkevent.EventReq, botClien
 		tenantKey = h[0]
 	}
 	fmt.Printf("🏢 TenantKey: %s\n", tenantKey)
-	fmt.Printf("📦 AppID: %s\n", botClient.AppID)
+	fmt.Printf("📦 AppID (接收者): %s\n", botClient.AppID)
 
 	// 解析原始 JSON，判断是 P1 还是 P2 格式
 	var raw map[string]interface{}
 	if err := json.Unmarshal(req.Body, &raw); err != nil {
 		return fmt.Errorf("解析事件 JSON 失败: %w", err)
+	}
+
+	// 打印原始事件的 sender 和 app_id 结构（用于调试）
+	if sender, ok := raw["event"].(map[string]interface{})["sender"].(map[string]interface{}); ok {
+		fmt.Printf("🔍 原始事件 sender: %+v\n", sender)
+	}
+	if appID, ok := raw["app_id"].(string); ok {
+		fmt.Printf("🔍 原始事件 app_id (发送者): %s\n", appID)
 	}
 
 	event, ok := raw["event"].(map[string]interface{})
@@ -293,6 +354,7 @@ func handleMessageReceive(ctx context.Context, req *larkevent.EventReq, botClien
 	}
 
 	var senderID, messageID, chatID, chatType, msgType, content string
+	var senderBotID string // 发送者的 bot_id (app_id)
 
 	// P2 格式: event.sender + event.message（@机器人消息）
 	if sender, ok := event["sender"].(map[string]interface{}); ok {
@@ -300,6 +362,10 @@ func handleMessageReceive(ctx context.Context, req *larkevent.EventReq, botClien
 			if openID, ok := senderIDMap["open_id"].(string); ok {
 				senderID = openID
 			}
+		}
+		// 提取发送者的 bot_id（用于识别消息来自哪个应用）
+		if botID, ok := sender["bot_id"].(string); ok {
+			senderBotID = botID
 		}
 		if msg, ok := event["message"].(map[string]interface{}); ok {
 			messageID, _ = msg["message_id"].(string)
@@ -320,6 +386,17 @@ func handleMessageReceive(ctx context.Context, req *larkevent.EventReq, botClien
 		if text, ok := event["text"].(string); ok {
 			content = fmt.Sprintf(`{"text":"%s"}`, text)
 		}
+		// P1 格式的 app_id 可能位于事件顶层
+		if appID, ok := raw["app_id"].(string); ok {
+			senderBotID = appID
+		}
+	}
+
+	// 优先使用 sender.bot_id，如果为空则尝试 raw.app_id
+	if senderBotID == "" {
+		if appID, ok := raw["app_id"].(string); ok {
+			senderBotID = appID
+		}
 	}
 
 	fmt.Printf("\n💬 消息详情:\n")
@@ -327,7 +404,8 @@ func handleMessageReceive(ctx context.Context, req *larkevent.EventReq, botClien
 	fmt.Printf("   - 会话ID: %s (%s)\n", chatID, chatType)
 	fmt.Printf("   - 消息类型: %s\n", msgType)
 	fmt.Printf("   - 内容: %s\n", truncateString(content, 200))
-	fmt.Printf("   - 发送者: %s\n", senderID)
+	fmt.Printf("   - 发送者 open_id: %s\n", senderID)
+	fmt.Printf("   - 发送者 app_id: %s\n", senderBotID)
 
 	// 构建事件数据传递给路由
 	handlerEvent := map[string]interface{}{
@@ -342,8 +420,9 @@ func handleMessageReceive(ctx context.Context, req *larkevent.EventReq, botClien
 			"sender_id": map[string]interface{}{
 				"open_id": senderID,
 			},
+			"bot_id": senderBotID,
 		},
-		"app_id":     botClient.AppID,
+		"app_id":     senderBotID, // 使用发送者的 app_id，而不是接收者的
 		"tenant_key": tenantKey,
 	}
 

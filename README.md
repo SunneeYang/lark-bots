@@ -10,6 +10,7 @@
 - ✅ **分层安全机制**: 白名单 + 来源校验的多层安全防护
 - ✅ **完整任务日志**: 记录所有任务的执行状态和结果
 - ✅ **消息路由**: 基于角色的自动消息路由
+- ✅ **轮询机制**: Executor 通过轮询获取群消息，解决机器人间事件不互通问题
 - ✅ **错误处理**: 统一的错误类型和处理机制
 
 ## 架构设计
@@ -19,7 +20,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         用户群 (User Group)                       │
-│  用户: @task-dispatcher 执行 deploy.sh                            │
+│  用户: 私聊 @dispatcher 执行 run_test                            │
 └────────────────────────┬────────────────────────────────────────┘
                          │
                          ↓
@@ -27,29 +28,46 @@
 │                    Dispatcher (分发机器人)                         │
 │  - 验证用户白名单                                                   │
 │  - 验证任务白名单                                                   │
-│  - 分发任务到机器人群                                               │
+│  - 发送任务到机器人群（纯文本）                                     │
 └────────────────────────┬────────────────────────────────────────┘
                          │
-                         ↓
+                         ↓ 发送纯文本消息（如 "run_test"）
 ┌─────────────────────────────────────────────────────────────────┐
 │                    机器人群 (Robot Group)                         │
-│  Dispatcher: @shell-executor execute /opt/scripts/deploy.sh      │
+│  Dispatcher: 发送纯文本任务名                                      │
 └────────────────────────┬────────────────────────────────────────┘
                          │
-                         ↓
+                         ↓ 每秒轮询获取新消息
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Executor (执行机器人)                           │
-│  - 验证 Dispatcher 白名单                                          │
-│  - 验证脚本白名单                                                   │
-│  - 执行脚本并返回结果                                               │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-                         ↓
-┌─────────────────────────────────────────────────────────────────┐
-│                    Dispatcher (回复用户)                           │
-│  - 收集执行结果                                                     │
-│  - 回复用户任务结果                                                 │
+│  - 轮询获取群消息                                                  │
+│  - 验证 Dispatcher 来源（app_id）                                  │
+│  - 验证任务名白名单                                                │
+│  - 执行脚本并汇报结果到机器人群                                     │
 └─────────────────────────────────────────────────────────────────┘
+```
+
+### 核心机制说明
+
+#### 为什么使用轮询？
+
+飞书有一个限制：**机器人发送的消息，其他机器人不会收到 `im.message.receive_v1` 事件**。
+
+因此采用了**轮询机制**：
+- Executor 每秒调用飞书 `im.v1.messages` API 获取群消息
+- 通过检查消息的 `sender.sender_type` 和 `sender.id` 判断是否来自 Dispatcher
+- 这种方式可以获取到**所有消息包括机器人发送的消息**
+
+#### 消息流转
+
+```
+用户 → Dispatcher（私聊）→ 机器人群（纯文本任务名）
+                                   ↓
+                         Executor 轮询获取消息
+                                   ↓
+                         匹配 dispatcher + 任务名
+                                   ↓
+                         执行脚本 → 汇报结果到机器人群
 ```
 
 ### 角色说明
@@ -57,45 +75,48 @@
 #### Dispatcher (分发机器人)
 
 **职责:**
-- 加入用户群，接收用户指令
+- 加入用户群，接收用户指令（私聊或 @mention）
 - 验证用户和任务白名单
-- 在机器人群分发任务给执行机器人
-- 收集执行结果并回复用户
+- 在机器人群发送纯文本任务名
 
 **配置:**
 ```yaml
-- name: "task-dispatcher"
+- name: "dispatcher"
   app_id: "cli_xxx"
   app_secret: "xxx"
   role: "dispatcher"
+  allowed_users:
+    - "ou_xxx"  # 允许的用户列表
 ```
 
 **安全控制:**
-- 用户白名单 (`user_whitelist`)
-- 任务白名单 (`task_whitelist`)
+- 用户白名单 (`allowed_users`)
+- 任务白名单（自动从所有 executor 的 task_scripts 合并）
 
 #### Executor (执行机器人)
 
 **职责:**
-- 只在机器人群，接收分发机器人指令
-- 执行脚本等任务
-- 返回执行结果
+- 轮询获取机器人群消息
+- 验证 Dispatcher 来源（按 app_id）
+- 验证任务名白名单
+- 执行脚本并汇报结果
 
 **配置:**
 ```yaml
-- name: "shell-executor"
+- name: "dev-executor"
   app_id: "cli_yyy"
   app_secret: "yyy"
   role: "executor"
   allowed_dispatchers:
-    - "cli_xxx"  # 只接受这些 dispatcher 的命令
-  allowed_scripts:
-    - "/opt/scripts/deploy.sh"  # 只允许执行这些脚本
+    - "cli_xxx"  # 只接受这些 dispatcher 的 app_id
+  task_scripts:
+    deploy: "/path/to/deploy.sh"
+    run_test: "/path/to/test.sh"
 ```
 
 **安全控制:**
-- Dispatcher 白名单 (`allowed_dispatchers`)
-- 脚本白名单 (`allowed_scripts`)
+- Dispatcher 白名单 (`allowed_dispatchers`) - 按 app_id 校验
+- 任务白名单 (`task_scripts`) - 每个 executor 只执行自己的任务
 
 ## 快速开始
 
@@ -123,18 +144,19 @@ vim configs/bots.yaml
 ```
 
 **配置说明:**
-1. **robot_group_id**: 机器人群 ID（所有机器人必须加入此群）
-2. **task_whitelist**: 允许执行的任务列表
-3. **user_whitelist**: 允许发起任务的用户列表
-4. **bots**: 机器人配置列表
+1. `robot_group_id`: 机器人群 ID（所有机器人必须加入此群）
+2. `allowed_users`: 允许发起任务的用户列表（仅 dispatcher）
+3. `task_scripts`: 任务名 → 脚本路径映射（executor）
+4. `bots`: 机器人配置列表
 
 **获取飞书应用信息:**
 - 访问 [飞书开放平台](https://open.feishu.cn/app)
 - 创建应用或选择已有应用
 - 在应用凭证页面查看 `App ID` 和 `App Secret`
 
-**获取群 ID:**
-- 在飞书群设置中查看群 ID
+**配置 Executor 权限:**
+- 权限管理 → 申请 `im:message:readonly`（读取历史消息）
+- 事件订阅 → 订阅 `im.message.receive_v1`
 
 ### 3. 启动服务
 
@@ -144,7 +166,7 @@ vim configs/bots.yaml
 go run cmd/bot-service/main.go start --all
 
 # 启动指定机器人
-go run cmd/bot-service/main.go start --bots=task-dispatcher,shell-executor
+go run cmd/bot-service/main.go start --bots=dispatcher,dev-executor
 
 # 使用自定义配置文件
 go run cmd/bot-service/main.go start --config=/path/to/config.yaml
@@ -166,18 +188,21 @@ go build -o bot-service cmd/bot-service/main.go
 
 ### 4. 使用示例
 
-**用户在群里发送:**
+**用户在私聊发送:**
 ```
-@task-dispatcher 执行 deploy.sh
+run_test
 ```
 
 **执行流程:**
-1. Dispatcher 验证用户是否在白名单中
-2. Dispatcher 验证任务是否在白名单中
-3. Dispatcher 在机器人群发送: `@shell-executor execute /opt/scripts/deploy.sh`
-4. Executor 验证来源和脚本白名单
-5. Executor 执行脚本并返回结果
-6. Dispatcher 收集结果并回复用户
+1. Dispatcher 接收私聊消息
+2. Dispatcher 验证用户是否在白名单中
+3. Dispatcher 验证任务是否在白名单中
+4. Dispatcher 在机器人群发送纯文本: `run_test`
+5. Executor 轮询获取群消息
+6. Executor 验证 sender.app_id 是 dispatcher
+7. Executor 验证任务名在 task_scripts 中
+8. Executor 执行脚本
+9. Executor 汇报结果到机器人群
 
 ## 配置说明
 
@@ -187,35 +212,27 @@ go build -o bot-service cmd/bot-service/main.go
 # 机器人群 ID
 robot_group_id: "oc_xxxxxxxxxxxxxxxxx"
 
-# 任务白名单
-task_whitelist:
-  - "deploy"
-  - "restart"
-  - "check_logs"
-
-# 用户白名单
-user_whitelist:
-  - "ou_xxxxxxxxxxxxxxxxx"
-  - "ou_yyyyyyyyyyyyyyyyyy"
-
 # 机器人配置
 bots:
   # 分发机器人
-  - name: "task-dispatcher"
+  - name: "dispatcher"
     app_id: "cli_xxxxxxxxxxxxxxxxx"
     app_secret: "xxxxxxxxxxxxxxxxxxxx"
     role: "dispatcher"
+    allowed_users:
+      - "ou_xxxxxxxxxxxxxxxxx"  # 允许的用户列表
 
   # 执行机器人
-  - name: "shell-executor"
+  - name: "dev-executor"
     app_id: "cli_yyyyyyyyyyyyyyyyyy"
     app_secret: "yyyyyyyyyyyyyyyyyy"
     role: "executor"
     allowed_dispatchers:
-      - "cli_xxxxxxxxxxxxxxxxx"
-    allowed_scripts:
-      - "/opt/scripts/deploy.sh"
-      - "/opt/scripts/restart.sh"
+      - "cli_xxxxxxxxxxxxxxxxx"  # dispatcher 的 app_id
+    task_scripts:
+      deploy: "/opt/scripts/deploy.sh"
+      run_test: "/opt/scripts/test.sh"
+      check_logs: "/opt/scripts/check_logs.sh"
 ```
 
 ### 安全配置建议
@@ -224,50 +241,40 @@ bots:
 严格限制可以发起任务的用户，避免未授权访问。
 
 ```yaml
-user_whitelist:
+allowed_users:
   - "ou_xxx"  # 飞书用户 ID
 ```
 
-#### 2. 任务白名单
-严格限制可以执行的任务名称，防止执行未授权的任务。
-
-```yaml
-task_whitelist:
-  - "deploy"
-  - "restart"
-```
-
-#### 3. Executor 安全校验
+#### 2. Executor 安全校验
 
 **Dispatcher 白名单:**
-只接受特定 dispatcher 的命令，防止伪造指令。
+只接受特定 dispatcher 的命令，防止伪造指令。按 `app_id` 校验。
 
 ```yaml
 allowed_dispatchers:
   - "cli_xxx"  # dispatcher 的 app_id
 ```
 
-**脚本白名单:**
-只允许执行白名单中的脚本，防止任意命令执行。
+**任务白名单:**
+每个 executor 只执行自己配置的任务，实现任务隔离。
 
 ```yaml
-allowed_scripts:
-  - "/opt/scripts/deploy.sh"
+task_scripts:
+  deploy: "/opt/scripts/deploy.sh"
+  run_test: "/opt/scripts/test.sh"
 ```
 
-#### 4. 脚本权限
+#### 3. 脚本权限
 确保脚本文件权限正确，推荐设置为 `750`。
 
 ```bash
 chmod 750 /opt/scripts/deploy.sh
 ```
 
-#### 5. 网络隔离
-机器人之间在专门的机器人群通信，与用户群隔离。
+#### 4. 网络隔离
+机器人在专门的机器人群通信，与用户群隔离。
 
-## 开发指南
-
-### 项目结构
+## 项目结构
 
 ```
 lark-bot-service/
@@ -276,33 +283,35 @@ lark-bot-service/
 │       └── main.go              # 入口，CLI 命令定义
 ├── internal/
 │   ├── config/
-│   │   ├── config.go            # 配置结构体定义
-│   │   ├── loader.go            # 配置加载逻辑
-│   │   └── validator.go         # 配置验证逻辑
+│   │   ├── config.go           # 配置结构体定义
+│   │   └── validator.go       # 配置验证逻辑
 │   ├── bot/
-│   │   ├── types.go             # 核心类型定义
-│   │   ├── registry.go          # 机器人注册表
-│   │   └── client.go            # 飞书 SDK 客户端封装
+│   │   ├── types.go           # 核心类型定义
+│   │   ├── registry.go        # 机器人注册表
+│   │   └── client.go         # 飞书 SDK 客户端封装
 │   ├── router/
-│   │   └── router.go            # 消息路由器
+│   │   └── router.go         # 消息路由器
 │   ├── handler/
-│   │   ├── handler.go           # Handler 接口定义
-│   │   ├── dispatcher.go        # DispatcherHandler 实现
-│   │   └── executor.go          # ExecutorHandler 实现
+│   │   ├── handler.go        # Handler 接口定义
+│   │   ├── dispatcher.go     # DispatcherHandler 实现
+│   │   ├── executor.go       # ExecutorHandler 实现
+│   │   └── poller.go        # 消息轮询器（核心机制）
 │   ├── logger/
-│   │   └── task_logger.go       # 任务日志记录器
+│   │   └── task_logger.go   # 任务日志记录器
 │   └── common/
-│       ├── message.go           # 消息发送通用函数
-│       └── errors.go            # 错误定义
+│       ├── sender.go         # 消息发送器
+│       └── event.go          # 事件解析工具
 ├── configs/
-│   └── bots.yaml.example        # 配置文件示例
+│   ├── bots.yaml.example     # 配置文件示例
+│   └── bots.yaml             # 实际配置（包含密钥）
 ├── test/
-│   └── mocks/
-│       └── lark_mock.go         # 飞书 SDK Mock
+│   └── scripts/              # 测试脚本
 ├── go.mod
 ├── go.sum
 └── README.md
 ```
+
+## 开发指南
 
 ### 运行测试
 
@@ -315,10 +324,6 @@ go test -cover ./...
 
 # 查看详细测试输出
 go test -v ./...
-
-# 生成覆盖率报告
-go test -coverprofile=coverage.out ./...
-go tool cover -html=coverage.out
 ```
 
 ### 代码规范
@@ -329,9 +334,6 @@ go fmt ./...
 
 # 静态检查
 go vet ./...
-
-# 使用 golangci-lint
-golangci-lint run
 ```
 
 ### 添加新功能
@@ -344,42 +346,34 @@ golangci-lint run
 
 ## 常见问题
 
-### 1. 如何获取飞书用户 ID？
+### 1. 为什么 Executor 使用轮询而不是 WebSocket 事件？
 
-**方法 1:** 在飞书管理后台查看用户信息
+飞书限制：**机器人发送的消息，其他机器人不会收到 `im.message.receive_v1` 事件**。
 
-**方法 2:** 通过 API 获取
-```go
-// 使用飞书 SDK 获取用户信息
-```
+轮询 API `im.v1.messages` 可以获取所有消息包括机器人发送的消息，因此采用轮询机制。
 
-### 2. 如何添加新的执行脚本？
+### 2. 轮询频率限制？
+
+飞书 API 限制：50 QPS（每秒 50 次请求）。
+
+当前配置每秒轮询 1 次，远低于限制，完全安全。
+
+### 3. 如何添加新的执行脚本？
 
 1. 将脚本放到指定目录（如 `/opt/scripts/`）
 2. 设置正确的文件权限（`chmod 750 script.sh`）
-3. 在配置文件的 `allowed_scripts` 中添加脚本路径
+3. 在配置文件的 `task_scripts` 中添加任务名 → 脚本路径映射
 4. 重启服务
 
-### 3. 如何排查启动失败？
+### 4. 支持多少个 Executor？
 
-1. 检查配置文件语法是否正确
-2. 检查 app_id 和 app_secret 是否正确
-3. 查看日志输出的错误信息
-4. 运行配置验证命令（如果有）
-
-### 4. 支持多少个机器人？
-
-理论上支持无限个机器人，建议：
-- Dispatcher: 1-2 个（避免分发冲突）
-- Executor: 根据业务需求添加，实现职责分离
+支持多个 Executor，每个 Executor 执行不同的任务。轮询请求频率 = executor 数量 × 1 QPS，远低于 50 QPS 限制。
 
 ## 技术栈
 
-- **语言**: Go 1.21
-- **飞书 SDK**: [larksuite/oapi-sdk-go/v3](https://github.com/larksuite/oapi-sdk-go) v3.0.20
+- **语言**: Go 1.21+
+- **飞书 SDK**: [larksuite/oapi-sdk-go/v3](https://github.com/larksuite/oapi-sdk-go) v3.5.3
 - **CLI 框架**: [spf13/cobra](https://github.com/spf13/cobra) v1.8.0
-- **配置管理**: [spf13/viper](https://github.com/spf13/viper) v1.18.0
-- **日志**: [uber-go/zap](https://github.com/uber-go/zap) v1.26.0
 - **YAML 解析**: [gopkg.in/yaml.v3](https://gopkg.in/yaml.v3) v3.0.1
 
 ## 安全性
@@ -388,28 +382,10 @@ golangci-lint run
 
 1. **用户白名单**: 只允许授权用户发起任务
 2. **任务白名单**: 只允许执行授权的任务
-3. **来源验证**: Executor 只接受授权 Dispatcher 的命令
-4. **脚本白名单**: 只允许执行授权的脚本
+3. **来源验证**: Executor 只接受授权 Dispatcher 的命令（按 app_id）
+4. **任务隔离**: 每个 Executor 只执行自己配置的任务
 5. **群组隔离**: 机器人在专门的机器人群通信
-
-## 后续扩展
-
-- [ ] 飞书 SDK 实际集成和事件监听
-- [ ] 消息发送功能实现
-- [ ] 数据库持久化（任务记录）
-- [ ] Web UI 管理界面
-- [ ] 更多执行器类型（Docker、K8s 等）
-- [ ] 任务调度和定时执行
-- [ ] 监控和告警
 
 ## License
 
 MIT
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-## 联系方式
-
-如有问题，请提交 Issue。

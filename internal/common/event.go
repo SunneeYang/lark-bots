@@ -43,6 +43,17 @@ func ExtractSenderBotID(event interface{}) (string, error) {
 	return "", fmt.Errorf("无法提取 sender.bot_id")
 }
 
+// ExtractSenderAppID 从事件中提取发送者的 app_id
+// 用于群聊中识别消息是否来自特定应用（如 dispatcher）
+func ExtractSenderAppID(event interface{}) (string, error) {
+	if eventMap, ok := event.(map[string]interface{}); ok {
+		if appID, ok := eventMap["app_id"].(string); ok && appID != "" {
+			return appID, nil
+		}
+	}
+	return "", fmt.Errorf("无法提取 app_id")
+}
+
 // ExtractMessageContent 从事件中提取消息内容
 func ExtractMessageContent(event interface{}) (string, error) {
 	if eventMap, ok := event.(map[string]interface{}); ok {

@@ -42,22 +42,23 @@ func (h *ExecutorHandler) SetTaskScripts(scripts map[string]string) {
 
 // Handle 处理消息
 func (h *ExecutorHandler) Handle(_ context.Context, event interface{}, botClient *bot.BotClient) error {
-	// 解析发送者 bot_id
-	senderBotID, err := common.ExtractSenderBotID(event)
-	if err != nil {
-		senderBotID = "解析失败-" + err.Error()
-	}
-
 	// 解析消息内容
 	rawContent, _ := common.ExtractMessageContent(event)
 	message, _ := common.ParseMessageContent(rawContent)
 
-	// 调试：打印完整事件sender结构
-	fmt.Printf("📨 [%s] 收到消息: senderBotID=%s, content=%s\n", botClient.Name, senderBotID, message)
+	// 通过 app_id 校验是否来自允许的 dispatcher
+	// app_id 位于事件顶层，表示发送消息的应用
+	senderAppID, err := common.ExtractSenderAppID(event)
+	if err != nil {
+		senderAppID = "解析失败-" + err.Error()
+	}
 
-	// 校验是否来自允许的 dispatcher
-	if !h.allowedDispatchers[senderBotID] {
-		return fmt.Errorf("未授权的 dispatcher: %s", senderBotID)
+	// 调试：打印完整事件结构
+	fmt.Printf("📨 [%s] 收到消息: senderAppID=%s, content=%s\n", botClient.Name, senderAppID, message)
+
+	// 校验是否来自允许的 dispatcher（按 app_id）
+	if !h.allowedDispatchers[senderAppID] {
+		return fmt.Errorf("未授权的 dispatcher: %s", senderAppID)
 	}
 
 	// 转换任务名到脚本路径（完整匹配）

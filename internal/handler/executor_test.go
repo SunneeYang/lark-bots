@@ -18,11 +18,9 @@ func TestExecutorHandler_VerifyDispatcher(t *testing.T) {
 
 	// 创建来自允许的 dispatcher 的事件
 	event := map[string]interface{}{
-		"sender": map[string]interface{}{
-			"bot_id": "cli_123",
-		},
+		"app_id": "cli_123",
 		"message": map[string]interface{}{
-			"content": "execute /opt/scripts/test.sh",
+			"content": `{"text":"execute /opt/scripts/test.sh"}`,
 		},
 	}
 
@@ -42,9 +40,7 @@ func TestExecutorHandler_UnauthorizedDispatcher(t *testing.T) {
 
 	// 创建来自未授权的 dispatcher 的事件
 	event := map[string]interface{}{
-		"sender": map[string]interface{}{
-			"bot_id": "cli_unauthorized",
-		},
+		"app_id": "cli_unauthorized",
 	}
 
 	err := handler.Handle(context.Background(), event, testBot)
@@ -64,11 +60,9 @@ func TestExecutorHandler_SetAllowedDispatchers(t *testing.T) {
 
 	// 测试允许的 dispatcher
 	event := map[string]interface{}{
-		"sender": map[string]interface{}{
-			"bot_id": "cli_123",
-		},
+		"app_id": "cli_123",
 		"message": map[string]interface{}{
-			"content": "execute /opt/scripts/test.sh",
+			"content": `{"text":"execute /opt/scripts/test.sh"}`,
 		},
 	}
 
@@ -94,11 +88,9 @@ func TestExecutorHandler_SetTaskScripts(t *testing.T) {
 	handler.SetAllowedDispatchers([]string{"cli_123"})
 
 	event := map[string]interface{}{
-		"sender": map[string]interface{}{
-			"bot_id": "cli_123",
-		},
+		"app_id": "cli_123",
 		"message": map[string]interface{}{
-			"content": "deploy",
+			"content": `{"text":"deploy"}`,
 		},
 	}
 
@@ -153,6 +145,55 @@ func TestExtractSenderBotID(t *testing.T) {
 				}
 				if botID != tt.expectedID {
 					t.Errorf("Expected bot ID '%s', got '%s'", tt.expectedID, botID)
+				}
+			}
+		})
+	}
+}
+
+func TestExtractSenderAppID(t *testing.T) {
+	tests := []struct {
+		name        string
+		event       interface{}
+		expectedID  string
+		expectError bool
+	}{
+		{
+			name: "valid app_id",
+			event: map[string]interface{}{
+				"app_id": "cli_abc123",
+			},
+			expectedID:  "cli_abc123",
+			expectError: false,
+		},
+		{
+			name:        "missing app_id",
+			event:       map[string]interface{}{},
+			expectError: true,
+		},
+		{
+			name: "empty app_id",
+			event: map[string]interface{}{
+				"app_id": "",
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			appID, err := common.ExtractSenderAppID(tt.event)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error but got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if appID != tt.expectedID {
+					t.Errorf("Expected app ID '%s', got '%s'", tt.expectedID, appID)
 				}
 			}
 		})

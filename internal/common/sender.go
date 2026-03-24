@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -33,7 +34,13 @@ func (s *Sender) SendToGroup(message string) error {
 		return fmt.Errorf("机器人群 ID 未配置")
 	}
 
-	contentStr := fmt.Sprintf(`{"text":"%s"}`, message)
+	// 使用 json.Marshal 正确转义特殊字符
+	contentData := map[string]string{"text": message}
+	contentBytes, err := json.Marshal(contentData)
+	if err != nil {
+		return fmt.Errorf("序列化消息失败: %w", err)
+	}
+	contentStr := string(contentBytes)
 	msgType := "text"
 
 	req := larkim.NewCreateMessageReqBuilder().
@@ -65,7 +72,13 @@ func (s *Sender) SendToChatID(chatID, msgType, content string) error {
 		return fmt.Errorf("chatID 不能为空")
 	}
 
-	contentStr := fmt.Sprintf(`{"text":"%s"}`, content)
+	// 使用 json.Marshal 正确转义特殊字符
+	contentData := map[string]string{"text": content}
+	contentBytes, err := json.Marshal(contentData)
+	if err != nil {
+		return fmt.Errorf("序列化消息失败: %w", err)
+	}
+	contentStr := string(contentBytes)
 
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType("chat_id").

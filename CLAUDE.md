@@ -44,20 +44,36 @@ go run cmd/bot-service/main.go fetch-openid dispatcher dev-executor
 
 机器人服务采用 **Dispatcher + Executor** 双角色模式：
 
-- **Dispatcher（分发机器人）**：驻留在用户群，接收用户 @ 指令，校验用户/任务白名单，向机器人群分发任务
-- **Executor（执行机器人）**：仅驻留在机器人群，校验分发者来源和脚本白名单，执行脚本，通过 @mention 汇报结果
+- **Dispatcher（分发机器人）**：驻留在用户群，接收用户 @ 指令或私聊，校验用户/任务白名单，向机器人群分发任务（纯文本）
+- **Executor（执行机器人）**：仅驻留在机器人群，轮询获取群消息，校验分发者来源（app_id）和任务名白名单，执行脚本，汇报结果
 
 ### 消息流转
 
 ```
-用户 (@Dispatcher) → Dispatcher (校验白名单) → 机器人群 → Executor (校验来源、执行脚本) → Dispatcher (接收结果)
+用户 (私聊) → Dispatcher (校验白名单) → 机器人群 (纯文本任务名)
+                                            ↓
+                              Executor 轮询获取消息
+                                            ↓
+                          校验 sender.app_id + 任务名匹配
+                                            ↓
+                              执行脚本 → 汇报结果到机器人群
 ```
+
+### 轮询机制（核心）
+
+**为什么使用轮询？**
+
+飞书限制：机器人发送的消息，其他机器人不会收到 `im.message.receive_v1` 事件。因此 Executor 使用**轮询机制**：
+
+- Executor 每秒调用 `im.v1.messages` API 获取群消息
+- 通过检查消息的 `sender.sender_type == "app"` 和 `sender.id` 判断是否来自 Dispatcher
+- 频率限制：50 QPS，当前配置 1 QPS，完全安全
 
 ### WebSocket 事件处理
 
 使用飞书 SDK WebSocket（`larksuite/oapi-sdk-go/v3/ws`）实现双向长连接：
 - 每个机器人使用自己的 `AppID`/`AppSecret` 创建独立 `ws.Client`
-- 事件分发器处理 `im.message.receive_v1`，同时支持 P1（私聊/群聊）和 P2（@mention）消息格式
+- 事件分发器处理 `im.message.receive_v1`，支持 P1（私聊/群聊）和 P2（@mention）消息格式
 - 在 `main.go:startBotWSClient` 中以 goroutine 方式启动
 
 ### 路由器模式
@@ -71,6 +87,7 @@ go run cmd/bot-service/main.go fetch-openid dispatcher dev-executor
 - `BotClient`：每个机器人的状态，包含飞书 SDK 客户端、角色、OpenID、允许的分发者列表
 - `BotRegistry`：线程安全的注册表，使用 `sync.RWMutex`，按名称/AppID/角色索引
 - `TaskRecord`：内存任务日志，使用 `sync.RWMutex` 保护
+- `MessagePoller`：消息轮询器，定期调用飞书 API 获取群消息
 
 ### 配置模型
 
