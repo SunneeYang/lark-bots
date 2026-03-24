@@ -60,13 +60,11 @@ func (h *ExecutorHandler) Handle(_ context.Context, event interface{}, botClient
 		return fmt.Errorf("未授权的 dispatcher: %s", senderBotID)
 	}
 
-	// 解析任务名（纯文本任务名）
-	taskName := h.parseTaskName(message)
+	// 转换任务名到脚本路径（完整匹配）
+	taskName := strings.TrimSpace(message)
 	if taskName == "" {
-		return nil // 不是有效的任务，静默忽略
+		return nil // 空消息，静默忽略
 	}
-
-	// 转换任务名到脚本路径
 	scriptPath, ok := h.taskScripts[taskName]
 	if !ok {
 		return nil // 任务不在自己的任务列表中，静默忽略
@@ -94,16 +92,6 @@ func (h *ExecutorHandler) Handle(_ context.Context, event interface{}, botClient
 	}
 
 	return nil
-}
-
-// parseTaskName 解析任务名（纯文本任务名）
-func (h *ExecutorHandler) parseTaskName(message string) string {
-	message = strings.TrimSpace(message)
-	if message == "" {
-		return ""
-	}
-	parts := strings.Fields(message)
-	return parts[0]
 }
 
 // executeScript 执行脚本

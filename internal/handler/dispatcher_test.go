@@ -81,67 +81,6 @@ func TestDispatcherHandler_TaskNotInWhitelist(t *testing.T) {
 	}
 }
 
-func TestDispatcherHandler_ParseTaskName(t *testing.T) {
-	handler := NewDispatcherHandler()
-
-	tests := []struct {
-		name         string
-		message      string
-		expectedTask string
-		expectError  bool
-	}{
-		{
-			name:         "带执行前缀",
-			message:      "执行 deploy.sh",
-			expectedTask: "deploy.sh",
-			expectError:  false,
-		},
-		{
-			name:         "直接任务名",
-			message:      "deploy.sh",
-			expectedTask: "deploy.sh",
-			expectError:  false,
-		},
-		{
-			name:         "带参数",
-			message:      "deploy.sh --env=prod",
-			expectedTask: "deploy.sh",
-			expectError:  false,
-		},
-		{
-			name:         "空消息",
-			message:      "",
-			expectedTask: "",
-			expectError:  true,
-		},
-		{
-			name:         "只有前缀",
-			message:      "执行",
-			expectedTask: "",
-			expectError:  true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			taskName, err := handler.parseTaskName(tt.message)
-
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("Expected error but got nil")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Unexpected error: %v", err)
-				}
-				if taskName != tt.expectedTask {
-					t.Errorf("Expected task name '%s', got '%s'", tt.expectedTask, taskName)
-				}
-			}
-		})
-	}
-}
-
 func TestDispatcherHandler_SetAllowedUsers(t *testing.T) {
 	handler := NewDispatcherHandler()
 

@@ -69,27 +69,21 @@ func (h *DispatcherHandler) Handle(_ context.Context, event interface{}, botClie
 	// 群聊时：剥离飞书的 @mention 标记（格式: "@_user_xxx task_name"）
 	message = h.stripAtMention(message)
 
-	// 解析任务名
-	taskName, err := h.parseTaskName(message)
-	if err != nil {
-		return fmt.Errorf("解析任务名失败: %w", err)
-	}
-
-	// 校验任务白名单
-	if !h.taskWhiteList[taskName] {
-		return fmt.Errorf("任务不在白名单中: %s", taskName)
+	// 校验任务白名单（完整匹配，包括空格）
+	if !h.taskWhiteList[message] {
+		return fmt.Errorf("任务不在白名单中: %s", message)
 	}
 
 	// 发送到机器人群（纯文本，executor 监听群里所有消息）
 	chatType, _ := common.ExtractChatType(event)
-	fmt.Printf("📤 [%s] 分发任务到机器人群: %s\n", botClient.Name, taskName)
-	if err := h.SendToGroup(taskName, botClient); err != nil {
+	fmt.Printf("📤 [%s] 分发任务到机器人群: %s\n", botClient.Name, message)
+	if err := h.SendToGroup(message, botClient); err != nil {
 		return fmt.Errorf("分发任务失败: %w", err)
 	}
 
 	// 私聊时额外回复用户告知已转发
 	if chatType == "p2p" {
-		if err := h.replyToUser(event, "任务 ["+taskName+"] 已转发给执行机器人，请等待结果", botClient); err != nil {
+		if err := h.replyToUser(event, "任务 ["+message+"] 已转发给执行机器人，请等待结果", botClient); err != nil {
 			return fmt.Errorf("回复用户失败: %w", err)
 		}
 	}
@@ -129,26 +123,4 @@ func (h *DispatcherHandler) replyToUser(event interface{}, text string, botClien
 	}
 	fmt.Printf("📤 [%s] 已回复用户: %s\n", botClient.Name, text)
 	return nil
-}
-
-// parseTaskName 从消息中解析任务名
-func (h *DispatcherHandler) parseTaskName(message string) (string, error) {
-	message = strings.TrimSpace(message)
-
-	// 移除 "执行" 前缀（如果有）
-	if strings.HasPrefix(message, "执行") {
-		message = strings.TrimSpace(message[6:])
-	}
-
-	parts := strings.Fields(message)
-	if len(parts) == 0 {
-		return "", fmt.Errorf("消息格式错误，无法解析任务名")
-	}
-
-	taskName := parts[0]
-	if taskName == "" {
-		return "", fmt.Errorf("任务名为空")
-	}
-
-	return taskName, nil
 }

@@ -108,56 +108,6 @@ func TestExecutorHandler_SetTaskScripts(t *testing.T) {
 	}
 }
 
-func TestExecutorHandler_ParseTaskName(t *testing.T) {
-	handler := NewExecutorHandler()
-
-	tests := []struct {
-		name         string
-		message      string
-		expectedTask string
-		expectEmpty  bool
-	}{
-		{
-			name:         "纯任务名",
-			message:      "deploy",
-			expectedTask: "deploy",
-			expectEmpty:  false,
-		},
-		{
-			name:         "带参数的任务名",
-			message:      "check_logs --lines 100",
-			expectedTask: "check_logs",
-			expectEmpty:  false,
-		},
-		{
-			name:         "空消息",
-			message:      "",
-			expectEmpty:  true,
-		},
-		{
-			name:         "纯空格消息",
-			message:      "   ",
-			expectEmpty:  true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			taskName := handler.parseTaskName(tt.message)
-
-			if tt.expectEmpty {
-				if taskName != "" {
-					t.Errorf("Expected empty task but got '%s'", taskName)
-				}
-			} else {
-				if taskName != tt.expectedTask {
-					t.Errorf("Expected task '%s', got '%s'", tt.expectedTask, taskName)
-				}
-			}
-		})
-	}
-}
-
 func TestExtractSenderBotID(t *testing.T) {
 	tests := []struct {
 		name        string

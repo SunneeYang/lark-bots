@@ -1,0 +1,70 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "启动服务 (默认配置)",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/cmd/bot-service",
+      "args": ["start", "--config", "configs/bots.yaml"],
+      "env": {
+        "GOPATH": "${workspaceFolder}/.gopath"
+      },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "启动服务 (启动所有机器人)",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/cmd/bot-service",
+      "args": ["start", "--config", "configs/bots.yaml", "--all"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "启动指定机器人",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/cmd/bot-service",
+      "args": ["start", "--config", "configs/bots.yaml", "--bots", "dispatcher-bot"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "调试测试 (当前文件)",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${workspaceFolder}",
+      "args": ["-run", "${selectedText}"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "运行所有测试",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${workspaceFolder}",
+      "args": ["./..."],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "调试测试 (包名)",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${workspaceFolder}/${relativeFileDirname}",
+      "args": ["-v", "-run", "${selectedText}"],
+      "cwd": "${workspaceFolder}"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "启动服务并监听调试端口",
+      "configurations": ["启动服务 (默认配置)"],
+      "preLaunchTask": "",
+      "stopAll": true
+    }
+  ]
+}
