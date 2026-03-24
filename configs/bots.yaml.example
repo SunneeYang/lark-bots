@@ -49,6 +49,10 @@ bots:
       deploy: "/opt/scripts/deploy.sh"
       restart: "/opt/scripts/restart.sh"
       check_logs: "/opt/scripts/check_logs.sh"
+    # 轮询间隔（可选，默认 "1s"）
+    # 支持格式: "1s", "500ms", "1m" 等
+    # 建议值: 飞书 API 限制 50 QPS，最低可设 100ms
+    poll_interval: "1s"
 
   # ====================
   # 执行机器人 2 - 测试执行器
@@ -65,6 +69,8 @@ bots:
     task_scripts:
       run_test: "/opt/scripts/run_test.sh"
       e2e_test: "/opt/scripts/e2e_test.sh"
+    # 轮询间隔（可选，默认 "1s"）
+    poll_interval: "2s"
 
 # ====================
 # 配置说明

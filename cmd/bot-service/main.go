@@ -242,12 +242,13 @@ func runStart(cmd *cobra.Command, args []string) {
 			}
 
 			// 创建轮询器
+			pollInterval := config.ParsePollInterval(botCfg.PollInterval)
 			poller := handler.NewMessagePoller(
 				executorBot,
 				cfg.RobotGroupID,
 				dispatchersMap,
 				botCfg.TaskScripts,
-				1*time.Second, // 每秒轮询一次
+				pollInterval,
 			)
 			pollers = append(pollers, poller)
 			fmt.Printf("   ✅ %s 轮询器已创建\n", botCfg.Name)
@@ -260,14 +261,19 @@ func runStart(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// 启动所有轮询器
-	for _, poller := range pollers {
-		poller.Start(ctx)
-	}
-
+	// 先启动 WebSocket 连接
 	for _, botClient := range activeBots {
 		go startBotWSClient(ctx, botClient)
 		fmt.Printf("   🌐 %s WebSocket 连接中...\n", botClient.Name)
+	}
+
+	// 等待 WebSocket 连接建立（SDK 的 Start 是阻塞的，给一点时间让连接建立）
+	time.Sleep(2 * time.Second)
+	fmt.Println("   ✅ 所有 WebSocket 连接已建立")
+
+	// 启动所有轮询器（WebSocket 连接建立之后）
+	for _, poller := range pollers {
+		poller.Start(ctx)
 	}
 
 	fmt.Println("\n========================================")

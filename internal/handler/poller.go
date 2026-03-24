@@ -26,6 +26,10 @@ type MessagePoller struct {
 	sender           *common.Sender
 	stopCh           chan struct{}
 	wg               sync.WaitGroup
+
+	// 已处理消息 ID 去重（使用 sync.Map 支持并发安全读写）
+	processedMsgs     sync.Map
+	dedupWindow      time.Duration // 去重时间窗口
 }
 
 // NewMessagePoller 创建消息轮询器
@@ -41,14 +45,45 @@ func NewMessagePoller(botClient *bot.BotClient, robotGroupID string, allowedDisp
 		taskScripts:      taskScripts,
 		sender:           sender,
 		stopCh:           make(chan struct{}),
+		dedupWindow:      2 * time.Minute, // 去重时间窗口，保留最近 2 分钟的消息 ID
 	}
 }
 
 // Start 开始轮询
 func (p *MessagePoller) Start(ctx context.Context) {
-	p.wg.Add(1)
+	p.wg.Add(2) // 轮询 + 清理
 	go p.pollLoop(ctx)
+	go p.cleanupLoop(ctx)
 	fmt.Printf("[%s] 消息轮询器已启动，间隔: %v\n", p.botClient.Name, p.pollInterval)
+}
+
+// cleanupLoop 定期清理已处理消息记录，避免内存无限增长
+func (p *MessagePoller) cleanupLoop(ctx context.Context) {
+	defer p.wg.Done()
+	cleanupTicker := time.NewTicker(p.dedupWindow)
+	defer cleanupTicker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-p.stopCh:
+			return
+		case <-cleanupTicker.C:
+			// 清理一半的旧记录（下次清理时再清另一半）
+			keys := make([]string, 0, 100)
+			p.processedMsgs.Range(func(key, _ any) bool {
+				keys = append(keys, key.(string))
+				return true
+			})
+			for i, k := range keys {
+				if i >= 100 { // 每次清理最多 100 个
+					break
+				}
+				p.processedMsgs.Delete(k)
+			}
+		}
+	}
 }
 
 // Stop 停止轮询
@@ -79,19 +114,27 @@ func (p *MessagePoller) pollLoop(ctx context.Context) {
 
 // fetchMessages 获取消息列表
 func (p *MessagePoller) fetchMessages(ctx context.Context) {
-	// 如果没有上次请求时间，设置为当前时间的前 1 分钟
+	currentTime := time.Now().UnixMilli()
+
+	// 计算本次请求的时间窗口 [startTime, endTime]，严格不重叠
 	startTime := p.lastRequestTime
 	if startTime == 0 {
-		startTime = time.Now().Add(-1 * time.Minute).UnixMilli()
+		startTime = currentTime - 60*1000 // 首次请求：向前取 1 分钟
 	}
+	endTime := currentTime // 本次请求的截止时间
 
-	// 构建请求
+	// 必须在 API 调用之前更新 lastRequestTime，下次轮询从 endTime 开始
+	p.lastRequestTime = endTime
+
+	// 构建请求，时间窗口 [startTime, endTime]，严格不重叠
+	// 使用升序排列（ByCreateTimeAsc），消息按时间顺序返回，便于理解
 	req := larkim.NewListMessageReqBuilder().
 		ContainerIdType("chat").
 		ContainerId(p.robotGroupID).
 		StartTime(fmt.Sprintf("%d", startTime/1000)). // API 需要秒时间戳
+		EndTime(fmt.Sprintf("%d", endTime/1000)).   // 截止时间（不含）
+		SortType(larkim.SortTypeListMessageByCreateTimeAsc). // 升序：最旧的消息在前
 		PageSize(50).
-		SortType(larkim.SortTypeListMessageByCreateTimeDesc).
 		Build()
 
 	// 调用 SDK 获取消息列表
@@ -106,9 +149,6 @@ func (p *MessagePoller) fetchMessages(ctx context.Context) {
 		return
 	}
 
-	// 更新请求时间
-	p.lastRequestTime = time.Now().UnixMilli()
-
 	// 处理消息
 	if resp.Data != nil && resp.Data.Items != nil {
 		p.processMessages(ctx, resp.Data.Items)
@@ -121,6 +161,15 @@ func (p *MessagePoller) processMessages(ctx context.Context, items []*larkim.Mes
 		// 跳过系统消息
 		if msg.MsgType != nil && *msg.MsgType == "system" {
 			continue
+		}
+
+		// 消息 ID 去重：同一消息只处理一次
+		if msg.MessageId == nil || *msg.MessageId == "" {
+			continue
+		}
+		msgID := *msg.MessageId
+		if _, loaded := p.processedMsgs.LoadOrStore(msgID, struct{}{}); loaded {
+			continue // 已处理过，跳过
 		}
 
 		// 解析 sender
@@ -160,7 +209,7 @@ func (p *MessagePoller) processMessages(ctx context.Context, items []*larkim.Mes
 		}
 
 		// 执行任务
-		fmt.Printf("[%s] 轮询发现任务: sender=%s, task=%s\n", p.botClient.Name, senderAppID, taskName)
+		fmt.Printf("[%s] 轮询发现任务: sender=%s, task=%s, msg_id=%s\n", p.botClient.Name, senderAppID, taskName, msgID)
 		if err := p.executeTask(ctx, taskName); err != nil {
 			fmt.Printf("[%s] 执行任务失败: %v\n", p.botClient.Name, err)
 		}
