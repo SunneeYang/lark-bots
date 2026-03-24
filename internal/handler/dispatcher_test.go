@@ -9,7 +9,7 @@ import (
 )
 
 func TestDispatcherHandler_HandleUserMessage(t *testing.T) {
-	handler := NewDispatcherHandler()
+	handler := NewDispatcherHandler(nil)
 
 	// 设置白名单
 	handler.SetAllowedUsers([]string{"user_1"})
@@ -34,7 +34,7 @@ func TestDispatcherHandler_HandleUserMessage(t *testing.T) {
 }
 
 func TestDispatcherHandler_UserNotInWhitelist(t *testing.T) {
-	handler := NewDispatcherHandler()
+	handler := NewDispatcherHandler(nil)
 
 	// 设置白名单，不包含 user_2
 	handler.SetAllowedUsers([]string{"user_1"})
@@ -58,7 +58,7 @@ func TestDispatcherHandler_UserNotInWhitelist(t *testing.T) {
 }
 
 func TestDispatcherHandler_TaskNotInWhitelist(t *testing.T) {
-	handler := NewDispatcherHandler()
+	handler := NewDispatcherHandler(nil)
 
 	// 设置白名单，不包含 test.sh
 	handler.SetAllowedUsers([]string{"user_1"})
@@ -82,7 +82,7 @@ func TestDispatcherHandler_TaskNotInWhitelist(t *testing.T) {
 }
 
 func TestDispatcherHandler_SetAllowedUsers(t *testing.T) {
-	handler := NewDispatcherHandler()
+	handler := NewDispatcherHandler(nil)
 
 	users := []string{"user_1", "user_2"}
 	handler.SetAllowedUsers(users)

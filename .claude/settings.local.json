@@ -4,7 +4,15 @@
       "mcp__web-reader__webReader",
       "Bash(go version:*)",
       "Bash(go mod:*)",
-      "Bash(go get:*)"
+      "Bash(go get:*)",
+      "mcp__MiniMax__web_search",
+      "Read(//Users/hortor/.claude/**)",
+      "Read(//Users/hortor/**)",
+      "Bash(go doc:*)",
+      "Bash(go test:*)",
+      "Bash(ls -la /Users/hortor/Documents/work/lark/internal/handler/matcher/cascade*)",
+      "Bash(go build:*)",
+      "Bash(go tool:*)"
     ]
   }
 }

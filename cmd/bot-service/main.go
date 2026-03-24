@@ -174,11 +174,6 @@ func runStart(cmd *cobra.Command, args []string) {
 	// 5. 注册 handlers
 	fmt.Println("\n📋 注册消息处理器:")
 
-	dispatcherHandler := handler.NewDispatcherHandler()
-	dispatcherHandler.SetRobotGroupID(cfg.RobotGroupID)
-	globalRouter.RegisterHandler("dispatcher", dispatcherHandler)
-	fmt.Println("   ✅ dispatcher 处理器注册成功")
-
 	// 配置 dispatcher 相关
 	var dispatcherCfg *config.BotConfig
 	// 收集所有 executor 的任务名（用于 dispatcher 校验）
@@ -193,6 +188,24 @@ func runStart(cmd *cobra.Command, args []string) {
 			}
 		}
 	}
+
+	// 配置 dispatcher 语义匹配
+	var semanticMatchCfg *handler.SemanticMatchConfig
+	if dispatcherCfg != nil && dispatcherCfg.SemanticMatch != nil {
+		semanticMatchCfg = &handler.SemanticMatchConfig{
+			Enabled:   dispatcherCfg.SemanticMatch.Enabled,
+			Threshold: dispatcherCfg.SemanticMatch.Threshold,
+			Provider:  dispatcherCfg.SemanticMatch.Provider,
+			Model:     dispatcherCfg.SemanticMatch.Model,
+			APIKey:    dispatcherCfg.SemanticMatch.APIKey,
+			BaseURL:   dispatcherCfg.SemanticMatch.BaseURL,
+		}
+	}
+
+	dispatcherHandler := handler.NewDispatcherHandler(semanticMatchCfg)
+	dispatcherHandler.SetRobotGroupID(cfg.RobotGroupID)
+	globalRouter.RegisterHandler("dispatcher", dispatcherHandler)
+	fmt.Println("   ✅ dispatcher 处理器注册成功")
 
 	// 设置 dispatcher 的用户白名单和任务白名单
 	if dispatcherCfg != nil {
@@ -458,13 +471,6 @@ func handleMessageReceive(ctx context.Context, req *larkevent.EventReq, botClien
 
 	fmt.Printf("========================================\n\n")
 	return nil
-}
-
-func getStringPtr(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }
 
 func parseBotList(botList string) []string {

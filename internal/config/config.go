@@ -28,7 +28,20 @@ type BotConfig struct {
 	// Executor 特有配置
 	AllowedDispatchers []string          `yaml:"allowed_dispatchers,omitempty"` // 允许的 dispatcher app_id 列表
 	TaskScripts        map[string]string `yaml:"task_scripts,omitempty"`      // 任务名 -> 脚本路径映射（仅 executor 角色）
-	PollInterval       string            `yaml:"poll_interval,omitempty"`      // 轮询间隔（如 "1s", "500ms"，仅 executor 角色，默认 "1s"）
+	PollInterval string `yaml:"poll_interval,omitempty"` // 轮询间隔（如 "1s", "500ms"，仅 executor 角色，默认 "1s"）
+
+	// 语义匹配配置
+	SemanticMatch *SemanticMatchConfig `yaml:"semantic_match,omitempty"`
+}
+
+// SemanticMatchConfig 语义匹配配置
+type SemanticMatchConfig struct {
+	Enabled   bool    `yaml:"enabled"`
+	Threshold float64 `yaml:"threshold"` // 相似度阈值，默认 0.7
+	Provider  string `yaml:"provider"`  // "glm" | "openai"
+	Model     string `yaml:"model"`     // 模型名（glm: embedding-3, openai: text-embedding-ada-002）
+	APIKey    string `yaml:"api_key"`   // API Key
+	BaseURL   string `yaml:"base_url"`  // 自定义 API 地址（可选）
 }
 
 // ServiceConfig 定义服务配置
