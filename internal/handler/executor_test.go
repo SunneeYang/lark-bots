@@ -16,9 +16,12 @@ func TestExecutorHandler_VerifyDispatcher(t *testing.T) {
 
 	testBot := bot.NewBotClient("executor", "cli_456", "secret", "executor")
 
-	// 创建来自允许的 dispatcher 的事件
+	// 创建来自允许的 dispatcher 的事件（sender_type = "app" 表示来自机器人）
 	event := map[string]interface{}{
 		"app_id": "cli_123",
+		"sender": map[string]interface{}{
+			"sender_type": "app",
+		},
 		"message": map[string]interface{}{
 			"content": `{"text":"execute /opt/scripts/test.sh"}`,
 		},
@@ -38,9 +41,12 @@ func TestExecutorHandler_UnauthorizedDispatcher(t *testing.T) {
 
 	testBot := bot.NewBotClient("executor", "cli_456", "secret", "executor")
 
-	// 创建来自未授权的 dispatcher 的事件
+	// 创建来自未授权的 dispatcher 的事件（sender_type = "app" 表示来自机器人）
 	event := map[string]interface{}{
 		"app_id": "cli_unauthorized",
+		"sender": map[string]interface{}{
+			"sender_type": "app",
+		},
 	}
 
 	err := handler.Handle(context.Background(), event, testBot)
@@ -61,6 +67,9 @@ func TestExecutorHandler_SetAllowedDispatchers(t *testing.T) {
 	// 测试允许的 dispatcher
 	event := map[string]interface{}{
 		"app_id": "cli_123",
+		"sender": map[string]interface{}{
+			"sender_type": "app",
+		},
 		"message": map[string]interface{}{
 			"content": `{"text":"execute /opt/scripts/test.sh"}`,
 		},
@@ -89,6 +98,9 @@ func TestExecutorHandler_SetTaskScripts(t *testing.T) {
 
 	event := map[string]interface{}{
 		"app_id": "cli_123",
+		"sender": map[string]interface{}{
+			"sender_type": "app",
+		},
 		"message": map[string]interface{}{
 			"content": `{"text":"deploy"}`,
 		},

@@ -42,19 +42,21 @@ func (h *ExecutorHandler) SetTaskScripts(scripts map[string]string) {
 
 // Handle 处理消息
 func (h *ExecutorHandler) Handle(_ context.Context, event interface{}, botClient *bot.BotClient) error {
+	// executor 使用轮询机制获取任务，不处理 WebSocket 事件
+	// 过滤：只处理来自机器人的消息，忽略用户消息
+	if !common.IsFromApp(event) {
+		return nil // 静默忽略用户消息
+	}
+
 	// 解析消息内容
 	rawContent, _ := common.ExtractMessageContent(event)
 	message, _ := common.ParseMessageContent(rawContent)
 
 	// 通过 app_id 校验是否来自允许的 dispatcher
-	// app_id 位于事件顶层，表示发送消息的应用
 	senderAppID, err := common.ExtractSenderAppID(event)
 	if err != nil {
 		senderAppID = "解析失败-" + err.Error()
 	}
-
-	// 调试：打印完整事件结构
-	fmt.Printf("📨 [%s] 收到消息: senderAppID=%s, content=%s\n", botClient.Name, senderAppID, message)
 
 	// 校验是否来自允许的 dispatcher（按 app_id）
 	if !h.allowedDispatchers[senderAppID] {

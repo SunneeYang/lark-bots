@@ -228,38 +228,195 @@ func parseTaskContent(content string) (string, error) {
 	return data.Text, nil
 }
 
-// executeTask 执行任务并发送结果到群
+// executeTask 执行任务并发送结果到群（流式输出，单条消息实时更新）
 func (p *MessagePoller) executeTask(ctx context.Context, taskName string) error {
 	scriptPath, ok := p.taskScripts[taskName]
 	if !ok {
 		return fmt.Errorf("任务不存在: %s", taskName)
 	}
 
-	// 执行脚本
-	cmd := exec.Command(scriptPath)
-	output, err := cmd.CombinedOutput()
-	outputStr := string(output)
-
-	// 构建结果消息
-	resultMsg := fmt.Sprintf("[%s] 任务 [%s] 执行%s", p.botClient.Name, taskName, map[bool]string{true: "成功", false: "失败"}[err == nil])
+	// 1. 发送初始卡片（带 update_multi: true，允许后续更新）
+	initialCard := p.buildTaskCard(taskName, "running", "正在执行...")
+	msgID, err := p.sendCardMessage(ctx, initialCard)
 	if err != nil {
-		resultMsg += fmt.Sprintf(": %v", err)
-	} else {
-		// 截断输出
-		outputLines := strings.Split(strings.TrimSpace(outputStr), "\n")
-		if len(outputLines) > 5 {
-			outputStr = strings.Join(outputLines[:5], "\n") + "\n...(输出已截断)"
-		}
-		resultMsg += fmt.Sprintf("\n输出:\n%s", strings.TrimSpace(outputStr))
+		fmt.Printf("❌ [%s] 发送卡片失败: %v\n", p.botClient.Name, err)
+		return err
 	}
+	fmt.Printf("📤 [%s] 任务开始: %s, msg_id=%s\n", p.botClient.Name, taskName, msgID)
 
-	fmt.Printf("📤 [%s] 汇报结果: %s\n", p.botClient.Name, taskName)
-
-	// 发送结果到机器人群
-	if err := p.sender.SendToGroup(resultMsg); err != nil {
-		fmt.Printf("❌ [%s] 汇报结果失败: %v\n", p.botClient.Name, err)
+	// 2. 执行脚本并实时更新卡片
+	cmd := exec.Command(scriptPath)
+	stdout, err := cmd.StdoutPipe()
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		p.patchCardMessage(ctx, msgID, p.buildTaskCard(taskName, "failed", fmt.Sprintf("启动失败: %v", err)))
 		return err
 	}
 
+	if err := cmd.Start(); err != nil {
+		p.patchCardMessage(ctx, msgID, p.buildTaskCard(taskName, "failed", fmt.Sprintf("启动失败: %v", err)))
+		return err
+	}
+
+	// 实时读取并更新卡片（每 0.5 秒）
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	var outputBuf, errorBuf strings.Builder
+	var lastUpdate time.Time
+	buf := make([]byte, 1024)
+
+	// 读取 stdout
+	go func() {
+		for {
+			n, err := stdout.Read(buf)
+			if n > 0 {
+				outputBuf.Write(buf[:n])
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
+
+	// 读取 stderr
+	for {
+		n, err := stderr.Read(buf)
+		if n > 0 {
+			errorBuf.Write(buf[:n])
+		}
+		if err != nil {
+			break
+		}
+
+		// 定期更新卡片显示进度
+		if time.Since(lastUpdate) > 500*time.Millisecond {
+			p.updateCardProgress(ctx, msgID, taskName, "running", outputBuf.String(), errorBuf.String())
+			lastUpdate = time.Now()
+		}
+	}
+
+	// 等待命令结束
+	cmd.Wait()
+
+	// 3. 更新最终结果
+	if cmd.ProcessState.Success() {
+		p.updateCardProgress(ctx, msgID, taskName, "success", outputBuf.String(), errorBuf.String())
+		fmt.Printf("✅ [%s] 任务完成: %s\n", p.botClient.Name, taskName)
+	} else {
+		p.updateCardProgress(ctx, msgID, taskName, "failed", outputBuf.String(), errorBuf.String())
+		fmt.Printf("❌ [%s] 任务失败: %s\n", p.botClient.Name, taskName)
+	}
+
 	return nil
+}
+
+// buildTaskCard 构建任务卡片（带 update_multi: true）
+func (p *MessagePoller) buildTaskCard(taskName, status, output string) string {
+	statusText := map[string]string{
+		"running": "⏳ 执行中",
+		"success": "✅ 执行成功",
+		"failed":  "❌ 执行失败",
+	}[status]
+
+	statusColor := map[string]string{
+		"running": "grey",
+		"success": "green",
+		"failed":  "red",
+	}[status]
+
+	// 格式化输出
+	formattedOutput := strings.TrimSpace(output)
+	if formattedOutput == "" {
+		formattedOutput = "正在执行..."
+	}
+
+	// 飞书交互式卡片 JSON 格式，必须包含 update_multi: true 才能更新
+	card := map[string]interface{}{
+		"config": map[string]bool{
+			"wide_screen_mode": true,
+			"update_multi":    true, // 允许更新，对所有用户可见
+		},
+		"header": map[string]interface{}{
+			"title": map[string]string{
+				"content": fmt.Sprintf("%s [%s]", statusText, taskName),
+				"tag":     "plain_text",
+			},
+			"template": statusColor,
+		},
+		"elements": []map[string]interface{}{
+			{
+				"tag": "div",
+				"text": map[string]string{
+					"content": fmt.Sprintf("```\n%s\n```", formattedOutput),
+					"tag":     "lark_md",
+				},
+			},
+		},
+	}
+
+	// 序列化为 JSON
+	cardBytes, _ := json.Marshal(card)
+	return string(cardBytes)
+}
+
+// sendCardMessage 发送卡片消息
+func (p *MessagePoller) sendCardMessage(ctx context.Context, card string) (string, error) {
+	msgType := "interactive"
+	req := larkim.NewCreateMessageReqBuilder().
+		ReceiveIdType("chat_id").
+		Body(&larkim.CreateMessageReqBody{
+			ReceiveId: &p.robotGroupID,
+			MsgType:   &msgType,
+			Content:   &card,
+		}).
+		Build()
+
+	resp, err := p.botClient.LarkClient.Im.V1.Message.Create(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	if !resp.Success() {
+		return "", fmt.Errorf("code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	if resp.Data == nil || resp.Data.MessageId == nil {
+		return "", fmt.Errorf("no message id in response")
+	}
+
+	return *resp.Data.MessageId, nil
+}
+
+// updateCardProgress 更新卡片进度
+func (p *MessagePoller) updateCardProgress(ctx context.Context, messageID, taskName, status, output, errorMsg string) {
+	formattedOutput := strings.TrimSpace(output)
+	if formattedOutput == "" {
+		formattedOutput = "正在执行..."
+	}
+
+	if errorMsg != "" {
+		formattedOutput += fmt.Sprintf("\n\n**错误:**\n```\n%s\n```", strings.TrimSpace(errorMsg))
+	}
+
+	card := p.buildTaskCard(taskName, status, formattedOutput)
+	p.patchCardMessage(ctx, messageID, card)
+}
+
+// patchCardMessage 使用 PATCH 更新卡片（不会显示"已编辑"）
+func (p *MessagePoller) patchCardMessage(ctx context.Context, messageID, card string) {
+	req := larkim.NewPatchMessageReqBuilder().
+		MessageId(messageID).
+		Body(larkim.NewPatchMessageReqBodyBuilder().
+			Content(card).
+			Build()).
+		Build()
+
+	resp, err := p.botClient.LarkClient.Im.V1.Message.Patch(ctx, req)
+	if err != nil {
+		fmt.Printf("⚠️ [%s] 更新卡片失败: %v\n", p.botClient.Name, err)
+		return
+	}
+	if !resp.Success() {
+		fmt.Printf("⚠️ [%s] 更新卡片失败: code=%d, msg=%s\n", p.botClient.Name, resp.Code, resp.Msg)
+	}
 }

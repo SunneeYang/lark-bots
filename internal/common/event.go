@@ -54,6 +54,27 @@ func ExtractSenderAppID(event interface{}) (string, error) {
 	return "", fmt.Errorf("无法提取 app_id")
 }
 
+// ExtractSenderType 从事件中提取发送者类型 (user / app)
+func ExtractSenderType(event interface{}) (string, error) {
+	if eventMap, ok := event.(map[string]interface{}); ok {
+		if sender, ok := eventMap["sender"].(map[string]interface{}); ok {
+			if senderType, ok := sender["sender_type"].(string); ok && senderType != "" {
+				return senderType, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("无法提取 sender_type")
+}
+
+// IsFromApp 判断消息是否来自机器人
+func IsFromApp(event interface{}) bool {
+	senderType, err := ExtractSenderType(event)
+	if err != nil {
+		return false
+	}
+	return senderType == "app"
+}
+
 // ExtractMessageContent 从事件中提取消息内容
 func ExtractMessageContent(event interface{}) (string, error) {
 	if eventMap, ok := event.(map[string]interface{}); ok {
