@@ -29,6 +29,15 @@ bots:
       - "ou_xxxxxxxxxxxxxxxxx"
       - "ou_yyyyyyyyyyyyyyyyyy"
       - "ou_zzzzzzzzzzzzzzzzzzzz"
+    # 群组到项目名的映射（可选）
+    # 用于根据用户所在的群组自动补充项目关键词（土豆、迷雾等）
+    # 例如：在"土豆开发群"中说"重启"，会自动补充为"土豆 重启"
+    # 适用场景：群组按项目划分时，用户无需每次说项目名
+    group_project_map:
+      "oc_xxx_potato_dev": "土豆"    # 土豆开发群 → 土豆
+      "oc_yyy_potato_test": "土豆"   # 土豆测试群 → 土豆
+      "oc_zzz_mist_dev": "迷雾"      # 迷雾开发群 → 迷雾
+      "oc_www_mist_test": "迷雾"     # 迷雾测试群 → 迷雾
     # 语义匹配配置（可选，用于新模式三层匹配）
     semantic_match:
       enabled: true                    # 是否启用语义匹配

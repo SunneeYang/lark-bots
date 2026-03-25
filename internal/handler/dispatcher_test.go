@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/SunneeYang/lark-bots/internal/bot"
@@ -397,5 +398,83 @@ func TestDispatcherHandler_LayeredModeBasicFlow(t *testing.T) {
 
 	if match.Script != "/scripts/potato_restart.sh" {
 		t.Errorf("Script = %s, want /scripts/potato_restart.sh", match.Script)
+	}
+}
+
+// TestGroupProjectMap 测试群组项目关键词自动补充功能
+func TestGroupProjectMap(t *testing.T) {
+	h := NewDispatcherHandler(nil)
+
+	// 配置群组到项目名的映射
+	groupProjectMap := map[string]string{
+		"oc_potato_dev_group":  "土豆",
+		"oc_mist_dev_group":    "迷雾",
+		"oc_potato_test_group": "土豆",
+		"oc_mist_test_group":   "迷雾",
+	}
+	h.SetGroupProjectMap(groupProjectMap)
+
+	tests := []struct {
+		name           string
+		chatID         string
+		message        string
+		expectedOutput string
+		shouldEnhance  bool
+	}{
+		{
+			name:           "土豆开发群自动补充项目名",
+			chatID:         "oc_potato_dev_group",
+			message:        "重启",
+			expectedOutput: "土豆 重启",
+			shouldEnhance:  true,
+		},
+		{
+			name:           "迷雾开发群自动补充项目名",
+			chatID:         "oc_mist_dev_group",
+			message:        "更新",
+			expectedOutput: "迷雾 更新",
+			shouldEnhance:  true,
+		},
+		{
+			name:           "未配置群组不补充",
+			chatID:         "oc_unknown_group",
+			message:        "重启",
+			expectedOutput: "重启",
+			shouldEnhance:  false,
+		},
+		{
+			name:           "用户已指定项目名不补充",
+			chatID:         "oc_potato_dev_group",
+			message:        "土豆重启",
+			expectedOutput: "土豆重启",
+			shouldEnhance:  false,
+		},
+		{
+			name:           "用户包含 potato 关键词不补充",
+			chatID:         "oc_potato_dev_group",
+			message:        "potato dev 重启",
+			expectedOutput: "potato dev 重启",
+			shouldEnhance:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// 构造测试事件
+			event := map[string]interface{}{
+				"message": map[string]interface{}{
+					"chat_id":   tt.chatID,
+					"chat_type": "group",
+					"content":   fmt.Sprintf(`{"text":"%s"}`, tt.message),
+				},
+			}
+
+			// 执行增强
+			enhanced := h.enhanceMessageWithGroupProject(context.Background(), event, tt.message)
+
+			if enhanced != tt.expectedOutput {
+				t.Errorf("enhanceMessageWithGroupProject() = %v, want %v", enhanced, tt.expectedOutput)
+			}
+		})
 	}
 }

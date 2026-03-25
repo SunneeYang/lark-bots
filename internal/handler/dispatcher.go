@@ -27,6 +27,7 @@ type DispatcherHandler struct {
 	userWhiteList   map[string]bool
 	taskWhiteList   map[string]bool       // 旧模式：任务名白名单
 	layeredMatcher  *matcher.LayeredMatcher // 新模式：分层匹配器
+	groupProjectMap map[string]string      // 群组 ID 到项目名的映射（自动补充项目关键词）
 }
 
 // NewDispatcherHandler 创建分发机器人处理器
@@ -59,6 +60,11 @@ func (h *DispatcherHandler) SetAllowedTasks(tasks []string) {
 	for _, task := range tasks {
 		h.taskWhiteList[task] = true
 	}
+}
+
+// SetGroupProjectMap 设置群组到项目名的映射（用于自动补充项目关键词）
+func (h *DispatcherHandler) SetGroupProjectMap(groupProjectMap map[string]string) {
+	h.groupProjectMap = groupProjectMap
 }
 
 // Handle 处理消息（支持新旧两种配置格式）
@@ -101,7 +107,10 @@ func (h *DispatcherHandler) Handle(ctx context.Context, event interface{}, botCl
 
 // handleLayeredMode 使用分层匹配器处理消息
 func (h *DispatcherHandler) handleLayeredMode(ctx context.Context, event interface{}, message, chatType string, botClient *bot.BotClient) error {
-	result := h.layeredMatcher.Match(ctx, matcher.LayeredMatchInput{UserInput: message})
+	// 自动补充群组的项目关键词
+	enhancedMessage := h.enhanceMessageWithGroupProject(ctx, event, message)
+
+	result := h.layeredMatcher.Match(ctx, matcher.LayeredMatchInput{UserInput: enhancedMessage})
 
 	// 否定检测
 	if result.HasNegation {
@@ -230,4 +239,46 @@ func (h *DispatcherHandler) replyToUser(event interface{}, text string, botClien
 	}
 	fmt.Printf("📤 [%s] 已回复用户: %s\n", botClient.Name, text)
 	return nil
+}
+
+// enhanceMessageWithGroupProject 根据群组配置自动补充项目关键词
+// 如果用户输入中已经包含项目名，则不再补充
+func (h *DispatcherHandler) enhanceMessageWithGroupProject(_ context.Context, event interface{}, message string) string {
+	// 未配置群组项目映射，直接返回原始消息
+	if len(h.groupProjectMap) == 0 {
+		return message
+	}
+
+	// 提取 chat_id
+	chatID, err := common.ExtractSenderChatID(event)
+	if err != nil {
+		// 无法提取 chat_id，返回原始消息
+		return message
+	}
+
+	// 查找群组配置的项目名
+	projectName, exists := h.groupProjectMap[chatID]
+	if !exists || projectName == "" {
+		// 群组未配置项目名，返回原始消息
+		return message
+	}
+
+	// 检查用户输入是否已经包含项目关键词
+	// 如果用户已经明确指定了项目（如 "土豆"、"迷雾"），则不自动补充
+	commonProjectKeywords := []string{"土豆", "potato", "迷雾", "mist", "番茄", "tomato"}
+	lowerMessage := strings.ToLower(message)
+	for _, keyword := range commonProjectKeywords {
+		if strings.Contains(lowerMessage, strings.ToLower(keyword)) {
+			// 用户已明确指定项目，不自动补充
+			fmt.Printf("🔍 [Dispatcher] 用户已指定项目，不自动补充: '%s'\n", message)
+			return message
+		}
+	}
+
+	// 自动补充群组的项目关键词
+	enhanced := fmt.Sprintf("%s %s", projectName, message)
+	fmt.Printf("🔍 [Dispatcher] 自动补充群组项目关键词: chat_id=%s, project='%s', 原始='%s', 增强='%s'\n",
+		chatID, projectName, message, enhanced)
+
+	return enhanced
 }

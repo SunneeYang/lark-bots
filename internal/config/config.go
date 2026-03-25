@@ -38,7 +38,8 @@ type BotConfig struct {
 	Role      string `yaml:"role"` // "dispatcher" | "executor"
 
 	// Dispatcher 特有配置
-	AllowedUsers []string `yaml:"allowed_users,omitempty"` // 允许的用户列表（仅 dispatcher 角色）
+	AllowedUsers    []string          `yaml:"allowed_users,omitempty"` // 允许的用户列表（仅 dispatcher 角色）
+	GroupProjectMap map[string]string `yaml:"group_project_map,omitempty"` // 群组 ID 到项目名的映射（仅 dispatcher 角色），如 "oc_xxx": "土豆"
 
 	// Executor 特有配置
 	AllowedDispatchers []string          `yaml:"allowed_dispatchers,omitempty"` // 允许的 dispatcher app_id 列表

@@ -220,6 +220,11 @@ func runStart(cmd *cobra.Command, args []string) {
 	if dispatcherCfg != nil {
 		fmt.Printf("📋 加载 dispatcher 配置: allowed_users=%v\n", dispatcherCfg.AllowedUsers)
 		dispatcherHandler.SetAllowedUsers(dispatcherCfg.AllowedUsers)
+		// 设置群组项目映射
+		if dispatcherCfg.GroupProjectMap != nil && len(dispatcherCfg.GroupProjectMap) > 0 {
+			dispatcherHandler.SetGroupProjectMap(dispatcherCfg.GroupProjectMap)
+			fmt.Printf("📋 加载群组项目映射配置: %d 个群组\n", len(dispatcherCfg.GroupProjectMap))
+		}
 	} else {
 		fmt.Println("⚠️ 未找到 dispatcher 配置")
 	}

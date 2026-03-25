@@ -17,6 +17,11 @@ bots:
       - "test_user_001"
       - "test_user_002"
       - "admin_user"
+    # 群组到项目名的映射（测试用）
+    # 测试时可以将实际的群组 ID 填入，验证群组项目自动补充功能
+    group_project_map:
+      "oc_test_potato_group": "土豆"   # 测试用土豆群
+      "oc_test_mist_group": "迷雾"     # 测试用迷雾群
     # 语义匹配配置（测试用）
     semantic_match:
       enabled: true
@@ -42,17 +47,21 @@ bots:
     # 任务列表（新格式）
     tasks:
       # 任务 1: 迷雾服务器
-      - keywords: ["迷雾", "mist"]
+      - name: "mist-dev-restart"
+        keywords: ["迷雾", "mist"]
         names: ["重启", "重新启动", "restart", "reload"]
         script: "/Users/hortor/Documents/work/lark/test/scripts/mist_dev_restart.sh"
-      - keywords: ["迷雾", "mist"]
+      - name: "mist-dev-update"
+        keywords: ["迷雾", "mist"]
         names: ["更新", "升级", "update", "upgrade"]
         script: "/Users/hortor/Documents/work/lark/test/scripts/mist_dev_update.sh"
       # 任务 2: 土豆服务器
-      - keywords: ["土豆", "potato"]
+      - name: "potato-dev-restart"
+        keywords: ["土豆", "potato"]
         names: ["重启", "重新启动", "restart", "reload"]
         script: "/Users/hortor/Documents/work/lark/test/scripts/potato_dev_restart.sh"
-      - keywords: ["土豆", "potato"]
+      - name: "potato-dev-update"
+        keywords: ["土豆", "potato"]
         names: ["更新", "升级", "update", "upgrade"]
         script: "/Users/hortor/Documents/work/lark/test/scripts/potato_dev_update.sh"
     # 轮询间隔
