@@ -20,6 +20,9 @@ type ExecutorTask struct {
 	// Name 唯一任务名称（全局唯一，用于 dispatcher 发送和 executor 认领）
 	// 格式建议：{server}-{env}-{operation}，如 "potato-dev-restart"
 	Name string `yaml:"name"`
+	// DisplayName 可读性好的任务显示名称（用于用户反馈）
+	// 如 "土豆开发服重启"
+	DisplayName string `yaml:"display_name,omitempty"`
 	// Keywords 用于精确匹配用户输入中的关键实体（如服务器名）
 	// 用户输入中包含任意一个 keyword 即命中该任务
 	Keywords []string `yaml:"keywords"`

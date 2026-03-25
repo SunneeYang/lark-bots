@@ -125,3 +125,16 @@ func ExtractSenderChatID(event interface{}) (string, error) {
 	}
 	return "", fmt.Errorf("无法提取 chat_id")
 }
+
+// ExtractMessageID 从事件中提取消息 ID (message_id)
+// 用于回复消息时指定 parent
+func ExtractMessageID(event interface{}) (string, error) {
+	if eventMap, ok := event.(map[string]interface{}); ok {
+		if message, ok := eventMap["message"].(map[string]interface{}); ok {
+			if messageID, ok := message["message_id"].(string); ok {
+				return messageID, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("无法提取 message_id")
+}

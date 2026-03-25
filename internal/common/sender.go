@@ -100,3 +100,42 @@ func (s *Sender) SendToChatID(chatID, msgType, content string) error {
 	return nil
 }
 
+// ReplyToMessage 回复指定消息（支持群聊和私聊）
+// parentMessageID: 要回复的消息 ID
+// msgType: 消息类型（通常为 "text"）
+// content: 消息内容
+func (s *Sender) ReplyToMessage(parentMessageID, msgType, content string) error {
+	if s.larkClient == nil {
+		return fmt.Errorf("飞书客户端未初始化")
+	}
+	if parentMessageID == "" {
+		return fmt.Errorf("parentMessageID 不能为空")
+	}
+
+	// 使用 json.Marshal 正确转义特殊字符
+	contentData := map[string]string{"text": content}
+	contentBytes, err := json.Marshal(contentData)
+	if err != nil {
+		return fmt.Errorf("序列化消息失败: %w", err)
+	}
+	contentStr := string(contentBytes)
+
+	req := larkim.NewReplyMessageReqBuilder().
+		MessageId(parentMessageID).
+		Body(&larkim.ReplyMessageReqBody{
+			MsgType: &msgType,
+			Content: &contentStr,
+		}).Build()
+
+	resp, err := s.larkClient.Im.V1.Message.Reply(context.Background(), req)
+	if err != nil {
+		return fmt.Errorf("回复消息失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("回复消息失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	return nil
+}
+

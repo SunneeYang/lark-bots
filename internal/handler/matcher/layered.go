@@ -31,6 +31,8 @@ type ExecutorTaskConfig struct {
 	Keywords []string
 	// TaskName 唯一任务名称（全局唯一，用于 dispatcher 发送和 executor 认领）
 	TaskName string
+	// DisplayName 可读性好的任务显示名称（用于用户反馈）
+	DisplayName string
 	// Script 对应脚本路径
 	Script string
 	// Names 操作名配置（第三层匹配）
@@ -74,6 +76,7 @@ type LayeredMatchResult struct {
 	ExecutorID   string // 匹配的执行机器人 ID
 	ExecutorName string
 	TaskName     string // 唯一任务名称（用于 dispatcher 发送）
+	DisplayName  string // 可读性好的任务显示名称（用于用户反馈）
 	Script       string // 脚本路径（仅 executor 本地使用）
 	Operation    string // 命中的操作名（如"重启"）
 	Confidence   float64
@@ -136,6 +139,7 @@ func (m *LayeredMatcher) Match(ctx context.Context, input LayeredMatchInput) Lay
 			ExecutorID:   executor.ExecutorID,
 			ExecutorName: executor.ExecutorName,
 			TaskName:     executor.TaskName,
+			DisplayName:  executor.DisplayName,
 			Script:       executor.Script,
 			Operation:    operation,
 			Confidence:   confidence,
@@ -186,6 +190,7 @@ func (m *LayeredMatcher) Match(ctx context.Context, input LayeredMatchInput) Lay
 			ExecutorID:   executor.ExecutorID,
 			ExecutorName: executor.ExecutorName,
 			TaskName:     executor.TaskName,
+			DisplayName:  executor.DisplayName,
 			Script:       executor.Script,
 			Operation:    operation,
 			Confidence:   confidence,

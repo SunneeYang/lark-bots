@@ -644,7 +644,8 @@ func buildExecutorConfigs(cfg *config.ServiceConfig) []matcher.ExecutorTaskConfi
 					Description:     botCfg.Description,
 					RoutingKeywords: botCfg.RoutingKeywords,
 					Keywords:        task.Keywords,
-					TaskName:        task.Name, // 新增：任务名称
+					TaskName:        task.Name,
+					DisplayName:     task.DisplayName,
 					Script:          task.Script,
 					Names: matcher.TaskNames{
 						Primary: task.Names[0], // 主操作名

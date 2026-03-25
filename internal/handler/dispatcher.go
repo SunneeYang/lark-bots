@@ -106,7 +106,7 @@ func (h *DispatcherHandler) Handle(ctx context.Context, event interface{}, botCl
 // ===== 新分层匹配模式 =====
 
 // handleLayeredMode 使用分层匹配器处理消息
-func (h *DispatcherHandler) handleLayeredMode(ctx context.Context, event interface{}, message, chatType string, botClient *bot.BotClient) error {
+func (h *DispatcherHandler) handleLayeredMode(ctx context.Context, event interface{}, message, _ string, botClient *bot.BotClient) error {
 	// 自动补充群组的项目关键词
 	enhancedMessage := h.enhanceMessageWithGroupProject(ctx, event, message)
 
@@ -150,12 +150,15 @@ func (h *DispatcherHandler) handleLayeredMode(ctx context.Context, event interfa
 		return fmt.Errorf("分发任务失败: %w", err)
 	}
 
-	// 私聊回复用户
-	if chatType == "p2p" {
-		replyMsg := fmt.Sprintf("任务 [%s %s] 已转发", match.ExecutorName, match.Operation)
-		if err := h.replyToUser(event, replyMsg, botClient); err != nil {
-			return fmt.Errorf("回复用户失败: %w", err)
-		}
+	// 回复用户（支持群聊和私聊）
+	taskDisplay := match.DisplayName
+	if taskDisplay == "" {
+		// 如果未配置 display_name，使用任务名
+		taskDisplay = match.TaskName
+	}
+	replyMsg := fmt.Sprintf("✅ 任务 [%s] 开始执行", taskDisplay)
+	if err := h.replyToUser(event, replyMsg, botClient); err != nil {
+		return fmt.Errorf("回复用户失败: %w", err)
 	}
 
 	return nil
@@ -164,7 +167,7 @@ func (h *DispatcherHandler) handleLayeredMode(ctx context.Context, event interfa
 // ===== 旧精确匹配模式 =====
 
 // handleLegacyMode 使用旧级联匹配器处理消息
-func (h *DispatcherHandler) handleLegacyMode(ctx context.Context, event interface{}, message, chatType string, botClient *bot.BotClient) error {
+func (h *DispatcherHandler) handleLegacyMode(ctx context.Context, event interface{}, message, _ string, botClient *bot.BotClient) error {
 	candidates := h.getTaskCandidates()
 	if len(candidates) == 0 {
 		return fmt.Errorf("无可用任务")
@@ -191,11 +194,10 @@ func (h *DispatcherHandler) handleLegacyMode(ctx context.Context, event interfac
 		return fmt.Errorf("分发任务失败: %w", err)
 	}
 
-	if chatType == "p2p" {
-		replyMsg := fmt.Sprintf("任务 [%s] 已转发", matchedTask)
-		if err := h.replyToUser(event, replyMsg, botClient); err != nil {
-			return fmt.Errorf("回复用户失败: %w", err)
-		}
+	// 回复用户（支持群聊和私聊）
+	replyMsg := fmt.Sprintf("✅ 任务 [%s] 开始执行", matchedTask)
+	if err := h.replyToUser(event, replyMsg, botClient); err != nil {
+		return fmt.Errorf("回复用户失败: %w", err)
 	}
 
 	return nil
@@ -226,8 +228,22 @@ func (h *DispatcherHandler) stripAtMention(message string) string {
 	return message
 }
 
-// replyToUser 私聊回复用户
+// replyToUser 回复用户消息（统一方案，支持群聊和私聊）
+// 优先使用回复消息方式（ReplyToMessage），回退到发送消息到会话（SendToChatID）
 func (h *DispatcherHandler) replyToUser(event interface{}, text string, botClient *bot.BotClient) error {
+	// 尝试提取 message_id，用于回复消息
+	messageID, err := common.ExtractMessageID(event)
+	if err == nil && messageID != "" {
+		// 使用回复消息的方式
+		sender := common.NewSender(botClient.LarkClient)
+		if err := sender.ReplyToMessage(messageID, "text", text); err != nil {
+			return fmt.Errorf("回复消息失败: %w", err)
+		}
+		fmt.Printf("📤 [%s] 已回复消息: %s\n", botClient.Name, text)
+		return nil
+	}
+
+	// 回退到私聊方式
 	chatID, err := common.ExtractSenderChatID(event)
 	if err != nil {
 		return fmt.Errorf("获取会话 ID 失败: %w", err)
