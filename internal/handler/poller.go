@@ -31,14 +31,20 @@ type MessagePoller struct {
 	// 已处理消息 ID 去重（使用 sync.Map 支持并发安全读写）
 	processedMsgs     sync.Map
 	dedupWindow      time.Duration // 去重时间窗口
+
+	// 并发控制
+	taskWg   sync.WaitGroup // 跟踪正在执行的任务
+	maxTasks int            // 最大并发任务数，0 表示不限制
+	sem      chan struct{}  // semaphore 用于限制并发数
 }
 
 // NewMessagePoller 创建消息轮询器
-func NewMessagePoller(botClient *bot.BotClient, robotGroupID string, allowedDispatchers map[string]bool, taskScripts map[string]string, taskNameToScript map[string]string, pollInterval time.Duration) *MessagePoller {
+// maxTasks: 最大并发任务数，0 或负数表示不限制
+func NewMessagePoller(botClient *bot.BotClient, robotGroupID string, allowedDispatchers map[string]bool, taskScripts map[string]string, taskNameToScript map[string]string, pollInterval time.Duration, maxTasks int) *MessagePoller {
 	sender := common.NewSender(botClient.LarkClient)
 	sender.SetRobotGroupID(robotGroupID)
 
-	return &MessagePoller{
+	p := &MessagePoller{
 		botClient:         botClient,
 		robotGroupID:      robotGroupID,
 		pollInterval:      pollInterval,
@@ -48,7 +54,15 @@ func NewMessagePoller(botClient *bot.BotClient, robotGroupID string, allowedDisp
 		sender:           sender,
 		stopCh:           make(chan struct{}),
 		dedupWindow:      2 * time.Minute, // 去重时间窗口，保留最近 2 分钟的消息 ID
+		maxTasks:         maxTasks,
 	}
+
+	// 初始化 semaphore（如果需要限制并发数）
+	if maxTasks > 0 {
+		p.sem = make(chan struct{}, maxTasks)
+	}
+
+	return p
 }
 
 // Start 开始轮询
@@ -92,6 +106,7 @@ func (p *MessagePoller) cleanupLoop(ctx context.Context) {
 func (p *MessagePoller) Stop() {
 	close(p.stopCh)
 	p.wg.Wait()
+	p.taskWg.Wait() // 等待所有正在执行的任务完成
 	fmt.Printf("[%s] 消息轮询器已停止\n", p.botClient.Name)
 }
 
@@ -157,7 +172,7 @@ func (p *MessagePoller) fetchMessages(ctx context.Context) {
 	}
 }
 
-// processMessages 处理消息列表
+// processMessages 处理消息列表（并发执行任务）
 func (p *MessagePoller) processMessages(ctx context.Context, items []*larkim.Message) {
 	for _, msg := range items {
 		// 跳过系统消息
@@ -205,11 +220,22 @@ func (p *MessagePoller) processMessages(ctx context.Context, items []*larkim.Mes
 			continue
 		}
 
-		// 执行任务
-		fmt.Printf("[%s] 轮询发现任务: sender=%s, task=%s, msg_id=%s\n", p.botClient.Name, senderAppID, taskText, msgID)
-		if err := p.executeTask(ctx, taskText); err != nil {
-			fmt.Printf("[%s] 执行任务失败: %v\n", p.botClient.Name, err)
-		}
+		// 并发执行任务
+		p.taskWg.Add(1)
+		go func() {
+			defer p.taskWg.Done()
+
+			// 如果设置了最大并发数，使用 semaphore 限制
+			if p.sem != nil {
+				p.sem <- struct{}{}        // 获取令牌
+				defer func() { <-p.sem }() // 释放令牌
+			}
+
+			fmt.Printf("[%s] 轮询发现任务: sender=%s, task=%s, msg_id=%s\n", p.botClient.Name, senderAppID, taskText, msgID)
+			if err := p.executeTask(ctx, taskText); err != nil {
+				fmt.Printf("[%s] 执行任务失败: %v\n", p.botClient.Name, err)
+			}
+		}()
 	}
 }
 

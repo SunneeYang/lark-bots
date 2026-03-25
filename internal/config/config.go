@@ -51,6 +51,7 @@ type BotConfig struct {
 	Tasks              []ExecutorTask    `yaml:"tasks,omitempty"`               // 任务列表（支持分层匹配）
 	TaskScripts        map[string]string `yaml:"task_scripts,omitempty"`        // 旧版任务映射（兼容exact模式）
 	PollInterval       string            `yaml:"poll_interval,omitempty"`      // 轮询间隔（如 "1s", "500ms"，默认 "1s"）
+	MaxTasks           int               `yaml:"max_tasks,omitempty"`          // 最大并发任务数，0 或负数表示不限制，默认 0
 
 	// 语义匹配配置
 	SemanticMatch *SemanticMatchConfig `yaml:"semantic_match,omitempty"`

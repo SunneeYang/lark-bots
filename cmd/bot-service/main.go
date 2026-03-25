@@ -276,6 +276,7 @@ func runStart(cmd *cobra.Command, args []string) {
 
 			// 创建轮询器
 			pollInterval := config.ParsePollInterval(botCfg.PollInterval)
+			maxTasks := botCfg.MaxTasks // 从配置读取最大并发任务数，0 或负数表示不限制
 			poller := handler.NewMessagePoller(
 				executorBot,
 				cfg.RobotGroupID,
@@ -283,6 +284,7 @@ func runStart(cmd *cobra.Command, args []string) {
 				botCfg.TaskScripts,
 				taskNameToScript,
 				pollInterval,
+				maxTasks,
 			)
 			pollers = append(pollers, poller)
 			fmt.Printf("   ✅ %s 轮询器已创建 (tasks: %d)\n", botCfg.Name, len(taskNameToScript))
