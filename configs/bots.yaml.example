@@ -15,7 +15,9 @@ bots:
   #   - 在机器人群分发任务给执行机器人（纯文本，不使用 @mention）
   #   - 收集执行结果并回复用户
   #   - 配置用户白名单进行安全控制
-  #   - 任务白名单自动从所有 executor 的 task_scripts 合并
+  #   - 支持两种匹配模式：
+  #     * 旧模式：精确匹配任务名（task_scripts）
+  #     * 新模式：三层语义匹配（tasks + routing_keywords）
   - name: "task-dispatcher"
     app_id: "cli_xxxxxxxxxxxxxxxxx"
     app_secret: "xxxxxxxxxxxxxxxxxxxx"
@@ -27,9 +29,7 @@ bots:
       - "ou_xxxxxxxxxxxxxxxxx"
       - "ou_yyyyyyyyyyyyyyyyyy"
       - "ou_zzzzzzzzzzzzzzzzzzzz"
-    # 语义匹配配置（可选）
-    # 用于将用户的自然语言映射到标准任务名
-    # 例如：用户输入"发布"可匹配到"deploy"任务
+    # 语义匹配配置（可选，用于新模式三层匹配）
     semantic_match:
       enabled: true                    # 是否启用语义匹配
       threshold: 0.7                  # 相似度阈值，0.0-1.0，低于此值不分发任务
@@ -38,48 +38,86 @@ bots:
       api_key: "${GLM_API_KEY}"       # 从环境变量读取 API Key
 
   # ====================
-  # 执行机器人 1 - Shell 脚本执行器
+  # 执行机器人 1 - 开发服专员（新三层匹配配置）
   # ====================
-  # 作用:
-  #   - 只在机器人群，监听群里所有消息
-  #   - 通过 sender bot_id 校验是否来自 dispatcher
-  #   - 通过任务名判断是否需要执行（任务名必须全局唯一）
-  #   - 执行脚本并汇报结果到机器人群
-  # 注意: 需要在飞书开放平台申请 im:message.group_msg 权限
-  - name: "开发服专员"
+  # 新配置格式示例：支持三层语义匹配
+  # 用户输入 "土豆开发服重启" 会自动匹配到对应的任务和脚本
+  - name: "dev-executor"
     app_id: "cli_yyyyyyyyyyyyyyyyyy"
     app_secret: "yyyyyyyyyyyyyyyyyy"
     role: "executor"
+    description: "开发服执行机器人"
     # 允许的 dispatcher app_id 列表
     allowed_dispatchers:
       - "cli_xxxxxxxxxxxxxxxxx"  # task-dispatcher 的 app_id
-    # 任务名 -> 脚本路径映射（任务名必须全局唯一）
-    task_scripts:
-      deploy: "/opt/scripts/deploy.sh"
-      restart: "/opt/scripts/restart.sh"
-      check_logs: "/opt/scripts/check_logs.sh"
+    # 路由关键词（第一层粗匹配，用于快速定位 executor）
+    routing_keywords:
+      - "开发"
+      - "dev"
+      - "development"
+    # 任务列表（新格式）
+    tasks:
+      # 任务 1: 迷雾服务器
+      - keywords: ["迷雾", "mist"]  # 第二层精匹配：命中任何一个即确定任务
+        names: ["重启", "重新启动", "restart", "reload"]  # 第三层：操作名候选（精确或语义匹配）
+        script: "/opt/scripts/mist_dev_restart.sh"
+      - keywords: ["迷雾", "mist"]
+        names: ["更新", "升级", "update", "upgrade"]
+        script: "/opt/scripts/mist_dev_update.sh"
+      # 任务 2: 土豆服务器
+      - keywords: ["土豆", "potato"]
+        names: ["重启", "重新启动", "restart", "reload"]
+        script: "/opt/scripts/potato_dev_restart.sh"
+      - keywords: ["土豆", "potato"]
+        names: ["更新", "升级", "update", "upgrade"]
+        script: "/opt/scripts/potato_dev_update.sh"
     # 轮询间隔（可选，默认 "1s"）
-    # 支持格式: "1s", "500ms", "1m" 等
-    # 建议值: 飞书 API 限制 50 QPS，最低可设 100ms
     poll_interval: "1s"
 
   # ====================
-  # 执行机器人 2 - 测试执行器
+  # 执行机器人 2 - 测试服专员（旧配置格式，向后兼容）
   # ====================
-  # 作用:
-  #   - 执行测试相关的脚本
-  #   - 与开发服专员分离，实现职责分离
-  - name: "测试专员"
+  # 旧配置格式示例：精确匹配任务名
+  # 用户输入必须完全匹配 task_scripts 中的键名
+  - name: "test-executor"
     app_id: "cli_zzzzzzzzzzzzzzzzzzzz"
     app_secret: "zzzzzzzzzzzzzzzzzzzz"
     role: "executor"
     allowed_dispatchers:
       - "cli_xxxxxxxxxxxxxxxxx"  # task-dispatcher 的 app_id
+    # 旧格式：任务名 -> 脚本路径映射（精确匹配）
     task_scripts:
       run_test: "/opt/scripts/run_test.sh"
       e2e_test: "/opt/scripts/e2e_test.sh"
+      deploy_staging: "/opt/scripts/deploy_staging.sh"
     # 轮询间隔（可选，默认 "1s"）
     poll_interval: "2s"
+
+  # ====================
+  # 执行机器人 3 - 混合模式（同时支持新旧配置）
+  # ====================
+  # 优先使用 tasks（新格式），如果为空则回退到 task_scripts（旧格式）
+  - name: "prod-executor"
+    app_id: "cli_wwwwwwwwwwwwwwwwwwww"
+    app_secret: "wwwwwwwwwwwwwwwwwwww"
+    role: "executor"
+    description: "生产服执行机器人"
+    allowed_dispatchers:
+      - "cli_xxxxxxxxxxxxxxxxx"
+    routing_keywords:
+      - "生产"
+      - "prod"
+      - "production"
+    # 新格式任务配置（优先使用）
+    tasks:
+      - keywords: ["生产服", "生产"]
+        names: ["回滚", "rollback", "回退"]
+        script: "/opt/scripts/prod_rollback.sh"
+    # 旧格式（当 tasks 为空时使用）
+    task_scripts:
+      health_check: "/opt/scripts/prod_health_check.sh"
+      backup_db: "/opt/scripts/prod_backup_db.sh"
+    poll_interval: "5s"
 
 # ====================
 # 配置说明
@@ -90,25 +128,44 @@ bots:
 ### Dispatcher (分发机器人)
 # - 必须加入用户群，接收用户在群里 @ 机器人的消息
 # - 验证用户是否在 allowed_users 白名单中
-# - 任务白名单自动从所有 executor 的 task_scripts 合并计算
-# - 在机器人群发送纯文本任务名（不使用 @mention）
+# - 支持两种匹配模式（自动检测）：
+#   * 新模式：当任一 executor 配置了 tasks 时启用三层语义匹配
+#   * 旧模式：所有 executor 都只配置了 task_scripts 时使用精确匹配
+# - 在机器人群发送结构化消息（新）或纯文本任务名（旧）
 # - 私聊时回复用户告知任务已转发
 #
 ### Executor (执行机器人)
 # - 只加入机器人群
-# - 通过 sender bot_id 校验是否来自允许的 dispatcher
-# - 监听群消息，任务名匹配则执行
+# - 通过 sender app_id 校验是否来自允许的 dispatcher
+# - 监听群消息，解析并执行任务
 # - 执行脚本并汇报结果到机器人群
+#
+## 三层语义匹配流程（新模式）
+#
+# 用户输入: "土豆开发服重启一下"
+#
+# 第一层 - Executor 路由（粗匹配）:
+#   在 routing_keywords 中模糊匹配 "开发" → 命中 dev-executor
+#   剩余文本: "土豆重启一下"
+#
+# 第二层 - Task 关键词过滤（精匹配）:
+#   在所有 tasks 的 keywords 中精确匹配 "土豆" → 命中土豆服务器任务
+#   剩余文本: "重启一下"
+#
+# 第三层 - 操作名匹配（精确 + 语义兜底）:
+#   在 names 中先精确匹配 "重启" → 命中！
+#   如果精确失败，则语义匹配 "重启一下" 最接近 "重启"
+#
+# 最终结果: 执行 potato_dev_restart.sh
 #
 ## 安全配置建议
 #
 # 1. 用户白名单: 严格限制可以发起任务的用户
-# 2. 任务名唯一性: 所有 executor 的任务名必须全局唯一（启动时校验）
-# 3. Executor 安全校验:
+# 2. Executor 安全校验:
 #    - allowed_dispatchers: 只接受特定 dispatcher 的命令（按 app_id）
-#    - task_scripts: 只允许执行白名单中的脚本
-# 4. 脚本权限: 确保脚本文件权限正确（如 750）
-# 5. 网络隔离: 机器人之间在专门的机器人群通信
+#    - tasks/task_scripts: 只允许执行白名单中的脚本
+# 3. 脚本权限: 确保脚本文件权限正确（如 750）
+# 4. 网络隔离: 机器人之间在专门的机器人群通信
 #
 ## 获取飞书应用信息
 #
@@ -131,10 +188,27 @@ bots:
 #
 ## 使用示例
 #
-# 1. 用户在群里发送: "@task-dispatcher deploy"
-# 2. Dispatcher 验证用户在 allowed_users 中
-# 3. Dispatcher 验证任务名在 executor 的 task_scripts 中
-# 4. Dispatcher 在机器人群发送纯文本: "deploy"
-# 5. 开发服专员 收到消息，校验 sender 是 task-dispatcher
-# 6. 开发服专员 执行 /opt/scripts/deploy.sh
-# 7. 开发服专员 在机器人群发送结果
+### 新模式（三层语义匹配）
+# 用户输入: "土豆 dev 重启"
+#   → Dispatcher 三层匹配
+#   → 发送: "cmd:重启_dev-executor|script:/opt/scripts/potato_dev_restart.sh"
+#   → dev-executor 执行脚本
+#   → 返回结果
+#
+### 旧模式（精确匹配）
+# 用户输入: "@task-dispatcher run_test"
+#   → Dispatcher 精确匹配 "run_test"
+#   → 发送: "run_test"
+#   → test-executor 执行 /opt/scripts/run_test.sh
+#   → 返回结果
+#
+## 边界情况处理
+#
+# 1. 否定意图: "土豆开发服不要重启"
+#    → 检测到 "不要" → 拒绝执行，提示用户
+#
+# 2. 多意图: "把土豆和迷雾的开发服都重启一下"
+#    → 检测到多个匹配 → 拒绝执行，提示一次只说一个
+#
+# 3. 未匹配: "那个服务器搞一下"
+#    → 无匹配 → 提示用户明确服务器名和操作

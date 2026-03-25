@@ -14,7 +14,9 @@ import (
 
 	"github.com/SunneeYang/lark-bots/internal/bot"
 	"github.com/SunneeYang/lark-bots/internal/config"
+	"github.com/SunneeYang/lark-bots/internal/embedding"
 	"github.com/SunneeYang/lark-bots/internal/handler"
+	"github.com/SunneeYang/lark-bots/internal/handler/matcher"
 	"github.com/SunneeYang/lark-bots/internal/logger"
 	"github.com/SunneeYang/lark-bots/internal/router"
 	larkevent "github.com/larksuite/oapi-sdk-go/v3/event"
@@ -176,43 +178,48 @@ func runStart(cmd *cobra.Command, args []string) {
 
 	// 配置 dispatcher 相关
 	var dispatcherCfg *config.BotConfig
-	// 收集所有 executor 的任务名（用于 dispatcher 校验）
-	allTaskNames := make([]string, 0)
 	for _, botCfg := range cfg.Bots {
 		if botCfg.Role == "dispatcher" {
 			dispatcherCfg = &botCfg
-		}
-		if botCfg.Role == "executor" {
-			for taskName := range botCfg.TaskScripts {
-				allTaskNames = append(allTaskNames, taskName)
-			}
+			break
 		}
 	}
 
-	// 配置 dispatcher 语义匹配
-	var semanticMatchCfg *handler.SemanticMatchConfig
-	if dispatcherCfg != nil && dispatcherCfg.SemanticMatch != nil {
-		semanticMatchCfg = &handler.SemanticMatchConfig{
-			Enabled:   dispatcherCfg.SemanticMatch.Enabled,
-			Threshold: dispatcherCfg.SemanticMatch.Threshold,
-			Provider:  dispatcherCfg.SemanticMatch.Provider,
-			Model:     dispatcherCfg.SemanticMatch.Model,
-			APIKey:    dispatcherCfg.SemanticMatch.APIKey,
-			BaseURL:   dispatcherCfg.SemanticMatch.BaseURL,
-		}
-	}
-
-	dispatcherHandler := handler.NewDispatcherHandler(semanticMatchCfg)
+	// 创建 dispatcher handler
+	dispatcherHandler := handler.NewDispatcherHandler(nil)
 	dispatcherHandler.SetRobotGroupID(cfg.RobotGroupID)
 	globalRouter.RegisterHandler("dispatcher", dispatcherHandler)
 	fmt.Println("   ✅ dispatcher 处理器注册成功")
 
-	// 设置 dispatcher 的用户白名单和任务白名单
-	if dispatcherCfg != nil {
-		fmt.Printf("📋 加载 dispatcher 配置: allowed_users=%v, total_tasks=%d\n",
-			dispatcherCfg.AllowedUsers, len(allTaskNames))
-		dispatcherHandler.SetAllowedUsers(dispatcherCfg.AllowedUsers)
+	// 构建 executor 配置（用于分层匹配）
+	executorConfigs := buildExecutorConfigs(cfg)
+	if len(executorConfigs) > 0 {
+		// 有新配置格式，启用分层匹配模式
+		var semanticProvider embedding.Provider
+		if dispatcherCfg != nil && dispatcherCfg.SemanticMatch != nil && dispatcherCfg.SemanticMatch.Enabled {
+			semanticProvider = embedding.NewGLMProvider(dispatcherCfg.SemanticMatch.APIKey, dispatcherCfg.SemanticMatch.Model)
+		}
+		layeredMatcher := matcher.NewLayeredMatcher(executorConfigs, semanticProvider)
+		dispatcherHandler.SetLayeredMatcher(layeredMatcher)
+		fmt.Printf("   ✅ 分层匹配模式已启用，共 %d 个任务配置\n", len(executorConfigs))
+	} else {
+		// 旧配置格式，使用任务白名单模式
+		allTaskNames := make([]string, 0)
+		for _, botCfg := range cfg.Bots {
+			if botCfg.Role == "executor" {
+				for taskName := range botCfg.TaskScripts {
+					allTaskNames = append(allTaskNames, taskName)
+				}
+			}
+		}
 		dispatcherHandler.SetAllowedTasks(allTaskNames)
+		fmt.Printf("   ✅ 传统匹配模式已启用，共 %d 个任务\n", len(allTaskNames))
+	}
+
+	// 设置 dispatcher 的用户白名单
+	if dispatcherCfg != nil {
+		fmt.Printf("📋 加载 dispatcher 配置: allowed_users=%v\n", dispatcherCfg.AllowedUsers)
+		dispatcherHandler.SetAllowedUsers(dispatcherCfg.AllowedUsers)
 	} else {
 		fmt.Println("⚠️ 未找到 dispatcher 配置")
 	}
@@ -254,6 +261,14 @@ func runStart(cmd *cobra.Command, args []string) {
 				dispatchersMap[d] = true
 			}
 
+			// 构建任务名称到脚本的映射（新格式）
+			taskNameToScript := make(map[string]string)
+			for _, task := range botCfg.Tasks {
+				if task.Name != "" {
+					taskNameToScript[task.Name] = task.Script
+				}
+			}
+
 			// 创建轮询器
 			pollInterval := config.ParsePollInterval(botCfg.PollInterval)
 			poller := handler.NewMessagePoller(
@@ -261,10 +276,11 @@ func runStart(cmd *cobra.Command, args []string) {
 				cfg.RobotGroupID,
 				dispatchersMap,
 				botCfg.TaskScripts,
+				taskNameToScript,
 				pollInterval,
 			)
 			pollers = append(pollers, poller)
-			fmt.Printf("   ✅ %s 轮询器已创建\n", botCfg.Name)
+			fmt.Printf("   ✅ %s 轮询器已创建 (tasks: %d)\n", botCfg.Name, len(taskNameToScript))
 		}
 	}
 
@@ -604,4 +620,35 @@ func fetchBotOpenID(appID, appSecret string) (string, error) {
 	}
 
 	return botInfo.Bot.OpenID, nil
+}
+
+// buildExecutorConfigs 从配置构建 executor 任务配置（用于分层匹配）
+func buildExecutorConfigs(cfg *config.ServiceConfig) []matcher.ExecutorTaskConfig {
+	var configs []matcher.ExecutorTaskConfig
+
+	for _, botCfg := range cfg.Bots {
+		if botCfg.Role == "executor" {
+			// 新格式：tasks 配置
+			for _, task := range botCfg.Tasks {
+				if len(task.Names) == 0 {
+					continue // 跳过没有 names 的任务
+				}
+				configs = append(configs, matcher.ExecutorTaskConfig{
+					ExecutorID:      botCfg.AppID,
+					ExecutorName:    botCfg.Name,
+					Description:     botCfg.Description,
+					RoutingKeywords: botCfg.RoutingKeywords,
+					Keywords:        task.Keywords,
+					TaskName:        task.Name, // 新增：任务名称
+					Script:          task.Script,
+					Names: matcher.TaskNames{
+						Primary: task.Names[0], // 主操作名
+						Aliases: task.Names,    // 所有名称（含主名）
+					},
+				})
+			}
+		}
+	}
+
+	return configs
 }

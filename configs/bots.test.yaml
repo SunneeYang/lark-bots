@@ -5,7 +5,9 @@
 robot_group_id: "oc_test_robot_group_001"
 
 bots:
+  # ====================
   # 任务分发机器人
+  # ====================
   - name: "test-dispatcher"
     app_id: "cli_test_dispatcher_123"
     app_secret: "test_secret_dispatcher_abc"
@@ -15,29 +17,113 @@ bots:
       - "test_user_001"
       - "test_user_002"
       - "admin_user"
+    # 语义匹配配置（测试用）
+    semantic_match:
+      enabled: true
+      threshold: 0.7
+      provider: "glm"
+      model: "embedding-3"
+      api_key: "test_glm_api_key_123456"
 
-  # 脚本执行机器人 1
-  - name: "test-executor-1"
+  # ====================
+  # 脚本执行机器人 1 - 新三层匹配配置
+  # ====================
+  - name: "test-dev-executor"
     app_id: "cli_test_executor_1_456"
     app_secret: "test_secret_executor_1_def"
     role: "executor"
+    description: "测试开发服执行机器人"
     allowed_dispatchers:
       - "cli_test_dispatcher_123"
-    task_scripts:
-      deploy: "/Users/hortor/Documents/work/lark/test/scripts/deploy.sh"
-      health_check: "/Users/hortor/Documents/work/lark/test/scripts/health_check.sh"
-      backup: "/Users/hortor/Documents/work/lark/test/scripts/backup.sh"
-      cleanup_logs: "/Users/hortor/Documents/work/lark/test/scripts/cleanup_logs.sh"
-      test: "/Users/hortor/Documents/work/lark/test/scripts/test.sh"
-      fail: "/Users/hortor/Documents/work/lark/test/scripts/fail.sh"
+    # 路由关键词（第一层匹配）
+    routing_keywords:
+      - "开发"
+      - "dev"
+    # 任务列表（新格式）
+    tasks:
+      # 任务 1: 迷雾服务器
+      - keywords: ["迷雾", "mist"]
+        names: ["重启", "重新启动", "restart", "reload"]
+        script: "/Users/hortor/Documents/work/lark/test/scripts/mist_dev_restart.sh"
+      - keywords: ["迷雾", "mist"]
+        names: ["更新", "升级", "update", "upgrade"]
+        script: "/Users/hortor/Documents/work/lark/test/scripts/mist_dev_update.sh"
+      # 任务 2: 土豆服务器
+      - keywords: ["土豆", "potato"]
+        names: ["重启", "重新启动", "restart", "reload"]
+        script: "/Users/hortor/Documents/work/lark/test/scripts/potato_dev_restart.sh"
+      - keywords: ["土豆", "potato"]
+        names: ["更新", "升级", "update", "upgrade"]
+        script: "/Users/hortor/Documents/work/lark/test/scripts/potato_dev_update.sh"
+    # 轮询间隔
+    poll_interval: "1s"
 
-  # 脚本执行机器人 2 (可选)
+  # ====================
+  # 脚本执行机器人 2 - 旧配置格式（向后兼容）
+  # ====================
   - name: "test-executor-2"
     app_id: "cli_test_executor_2_789"
     app_secret: "test_secret_executor_2_ghi"
     role: "executor"
     allowed_dispatchers:
       - "cli_test_dispatcher_123"
+    # 旧格式：精确匹配任务名
     task_scripts:
       health_check: "/Users/hortor/Documents/work/lark/test/scripts/health_check.sh"
       test: "/Users/hortor/Documents/work/lark/test/scripts/test.sh"
+      deploy: "/Users/hortor/Documents/work/lark/test/scripts/deploy.sh"
+      backup: "/Users/hortor/Documents/work/lark/test/scripts/backup.sh"
+      cleanup_logs: "/Users/hortor/Documents/work/lark/test/scripts/cleanup_logs.sh"
+      fail: "/Users/hortor/Documents/work/lark/test/scripts/fail.sh"
+
+  # ====================
+  # 脚本执行机器人 3 - 混合模式示例
+  # ====================
+  - name: "test-prod-executor"
+    app_id: "cli_test_executor_3_000"
+    app_secret: "test_secret_executor_3_jkl"
+    role: "executor"
+    description: "测试生产服执行机器人"
+    allowed_dispatchers:
+      - "cli_test_dispatcher_123"
+    routing_keywords:
+      - "生产"
+      - "prod"
+    # 新格式任务
+    tasks:
+      - keywords: ["生产服", "生产"]
+        names: ["回滚", "rollback"]
+        script: "/Users/hortor/Documents/work/lark/test/scripts/prod_rollback.sh"
+    # 旧格式任务（当 tasks 为空时使用）
+    task_scripts:
+      health_check: "/Users/hortor/Documents/work/lark/test/scripts/health_check.sh"
+
+# ====================
+# 测试说明
+# ====================
+#
+## 三层匹配测试用例
+#
+# 测试输入 → 预期匹配
+#
+# 1. "土豆 dev 重启" → potato_dev_restart.sh
+# 2. "迷雾开发服更新一下" → mist_dev_update.sh
+# 3. "土豆服务器重新启动" → potato_dev_restart.sh
+# 4. "restart potato dev" → potato_dev_restart.sh（语义匹配）
+# 5. "土豆开发服不要重启" → 拒绝（否定意图）
+# 6. "把土豆和迷雾都重启" → 拒绝（多意图）
+#
+## 旧模式测试用例
+#
+# 测试输入 → 预期匹配
+#
+# 1. "health_check" → health_check.sh
+# 2. "deploy" → deploy.sh
+# 3. "backup" → backup.sh
+#
+## 边界情况测试
+#
+# 1. 否定检测: "土豆 dev 不要重启" → 应拒绝
+# 2. 多意图: "土豆和迷雾都重启" → 应拒绝
+# 3. 未匹配: "那个服务器搞一下" → 应提示未找到
+# 4. 模糊匹配: "土豆 dev 弄一下" → 应拒绝（无明确操作）

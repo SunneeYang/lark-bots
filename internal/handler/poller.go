@@ -22,7 +22,8 @@ type MessagePoller struct {
 	lastRequestTime int64 // 上次请求时间（毫秒时间戳）
 
 	allowedDispatchers map[string]bool
-	taskScripts       map[string]string
+	taskScripts       map[string]string // 旧格式：taskScripts（兼容）
+	taskNameToScript  map[string]string // 新格式：任务名称 -> 脚本路径
 	sender           *common.Sender
 	stopCh           chan struct{}
 	wg               sync.WaitGroup
@@ -33,7 +34,7 @@ type MessagePoller struct {
 }
 
 // NewMessagePoller 创建消息轮询器
-func NewMessagePoller(botClient *bot.BotClient, robotGroupID string, allowedDispatchers map[string]bool, taskScripts map[string]string, pollInterval time.Duration) *MessagePoller {
+func NewMessagePoller(botClient *bot.BotClient, robotGroupID string, allowedDispatchers map[string]bool, taskScripts map[string]string, taskNameToScript map[string]string, pollInterval time.Duration) *MessagePoller {
 	sender := common.NewSender(botClient.LarkClient)
 	sender.SetRobotGroupID(robotGroupID)
 
@@ -43,6 +44,7 @@ func NewMessagePoller(botClient *bot.BotClient, robotGroupID string, allowedDisp
 		pollInterval:      pollInterval,
 		allowedDispatchers: allowedDispatchers,
 		taskScripts:      taskScripts,
+		taskNameToScript: taskNameToScript,
 		sender:           sender,
 		stopCh:           make(chan struct{}),
 		dedupWindow:      2 * time.Minute, // 去重时间窗口，保留最近 2 分钟的消息 ID
@@ -198,19 +200,14 @@ func (p *MessagePoller) processMessages(ctx context.Context, items []*larkim.Mes
 		}
 
 		content := *msg.Body.Content
-		taskName, err := parseTaskContent(content)
+		taskText, err := parseTaskContent(content)
 		if err != nil {
 			continue
 		}
 
-		// 检查任务是否在白名单中
-		if _, ok := p.taskScripts[taskName]; !ok {
-			continue
-		}
-
 		// 执行任务
-		fmt.Printf("[%s] 轮询发现任务: sender=%s, task=%s, msg_id=%s\n", p.botClient.Name, senderAppID, taskName, msgID)
-		if err := p.executeTask(ctx, taskName); err != nil {
+		fmt.Printf("[%s] 轮询发现任务: sender=%s, task=%s, msg_id=%s\n", p.botClient.Name, senderAppID, taskText, msgID)
+		if err := p.executeTask(ctx, taskText); err != nil {
 			fmt.Printf("[%s] 执行任务失败: %v\n", p.botClient.Name, err)
 		}
 	}
@@ -229,10 +226,35 @@ func parseTaskContent(content string) (string, error) {
 }
 
 // executeTask 执行任务并发送结果到群（流式输出，单条消息实时更新）
-func (p *MessagePoller) executeTask(ctx context.Context, taskName string) error {
-	scriptPath, ok := p.taskScripts[taskName]
-	if !ok {
-		return fmt.Errorf("任务不存在: %s", taskName)
+// 兼容旧格式（纯文本任务名）和新格式（TaskCommand 结构化消息）
+func (p *MessagePoller) executeTask(ctx context.Context, taskInput string) error {
+	// 尝试解析为 TaskCommand 格式
+	taskCmd, err := ParseTaskCommand(taskInput)
+	var scriptPath string
+	var taskName string
+
+	if err == nil {
+		// 新格式：TaskCommand，只包含任务名称
+		taskName = taskCmd.TaskName
+
+		// 在自己的任务映射表中查找脚本
+		var ok bool
+		scriptPath, ok = p.taskNameToScript[taskName]
+		if !ok {
+			// 未找到，静默忽略（可能是发给其他 executor 的）
+			return nil
+		}
+	} else {
+		// 旧格式：纯文本任务名，从 taskScripts 查找
+		taskName = strings.TrimSpace(taskInput)
+		if taskName == "" {
+			return nil // 空消息，静默忽略
+		}
+		var ok bool
+		scriptPath, ok = p.taskScripts[taskName]
+		if !ok {
+			return nil // 任务不在自己的任务列表中，静默忽略
+		}
 	}
 
 	// 1. 发送初始卡片（带 update_multi: true，允许后续更新）
@@ -245,15 +267,15 @@ func (p *MessagePoller) executeTask(ctx context.Context, taskName string) error 
 	fmt.Printf("📤 [%s] 任务开始: %s, msg_id=%s\n", p.botClient.Name, taskName, msgID)
 
 	// 2. 执行脚本并实时更新卡片
-	cmd := exec.Command(scriptPath)
-	stdout, err := cmd.StdoutPipe()
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		p.patchCardMessage(ctx, msgID, p.buildTaskCard(taskName, "failed", fmt.Sprintf("启动失败: %v", err)))
-		return err
+	execCmd := exec.Command(scriptPath)
+	stdout, err1 := execCmd.StdoutPipe()
+	stderr, err2 := execCmd.StderrPipe()
+	if err1 != nil || err2 != nil {
+		p.patchCardMessage(ctx, msgID, p.buildTaskCard(taskName, "failed", fmt.Sprintf("启动失败: %v", err1)))
+		return err1
 	}
 
-	if err := cmd.Start(); err != nil {
+	if err := execCmd.Start(); err != nil {
 		p.patchCardMessage(ctx, msgID, p.buildTaskCard(taskName, "failed", fmt.Sprintf("启动失败: %v", err)))
 		return err
 	}
@@ -297,10 +319,10 @@ func (p *MessagePoller) executeTask(ctx context.Context, taskName string) error 
 	}
 
 	// 等待命令结束
-	cmd.Wait()
+	execCmd.Wait()
 
 	// 3. 更新最终结果
-	if cmd.ProcessState.Success() {
+	if execCmd.ProcessState.Success() {
 		p.updateCardProgress(ctx, msgID, taskName, "success", outputBuf.String(), errorBuf.String())
 		fmt.Printf("✅ [%s] 任务完成: %s\n", p.botClient.Name, taskName)
 	} else {

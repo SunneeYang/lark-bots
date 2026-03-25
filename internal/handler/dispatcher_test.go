@@ -6,6 +6,7 @@ import (
 
 	"github.com/SunneeYang/lark-bots/internal/bot"
 	"github.com/SunneeYang/lark-bots/internal/common"
+	"github.com/SunneeYang/lark-bots/internal/handler/matcher"
 )
 
 func TestDispatcherHandler_HandleUserMessage(t *testing.T) {
@@ -251,5 +252,150 @@ func TestDispatcherExtractMessageContent(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// ===== 新增测试：分层匹配模式 =====
+
+func TestDispatcherHandler_StripAtMention(t *testing.T) {
+	h := &DispatcherHandler{}
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "剥离 @user_xxx 前缀",
+			input:    "@_user_1234567890 重启土豆开发服",
+			expected: "重启土豆开发服",
+		},
+		{
+			name:     "剥离 @bot_xxx 前缀",
+			input:    "@_bot_abcdeffedcba 更新迷雾开发服",
+			expected: "更新迷雾开发服",
+		},
+		{
+			name:     "无 @mention 前缀",
+			input:    "重启土豆开发服",
+			expected: "重启土豆开发服",
+		},
+		{
+			name:     "只有 @mention 无后续文本",
+			input:    "@_user_1234567890",
+			expected: "",
+		},
+		{
+			name:     "以 @ 开头但不是 mention",
+			input:    "@ 重启",
+			expected: "@ 重启",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := h.stripAtMention(tt.input)
+			if got != tt.expected {
+				t.Errorf("stripAtMention() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestDispatcherHandler_SetLayeredMatcher(t *testing.T) {
+	h := NewDispatcherHandler(nil)
+
+	// 创建测试匹配器
+	executors := []matcher.ExecutorTaskConfig{
+		{
+			ExecutorID:   "test-executor",
+			ExecutorName: "test-executor",
+			Script:       "/test.sh",
+		},
+	}
+	matcher := matcher.NewLayeredMatcher(executors, nil)
+
+	// 设置分层匹配器
+	h.SetLayeredMatcher(matcher)
+
+	if h.layeredMatcher == nil {
+		t.Error("SetLayeredMatcher() did not set layeredMatcher")
+	}
+}
+
+func TestDispatcherHandler_ModeDetection(t *testing.T) {
+	// 测试传统模式（无 layeredMatcher）
+	h1 := NewDispatcherHandler(nil)
+	if h1.layeredMatcher != nil {
+		t.Error("New dispatcher should not have layeredMatcher by default")
+	}
+
+	// 测试分层匹配模式（有 layeredMatcher）
+	executors := []matcher.ExecutorTaskConfig{
+		{
+			ExecutorID: "test-executor",
+		},
+	}
+	h2 := NewDispatcherHandler(nil)
+	h2.SetLayeredMatcher(matcher.NewLayeredMatcher(executors, nil))
+	if h2.layeredMatcher == nil {
+		t.Error("SetLayeredMatcher() should set layeredMatcher")
+	}
+}
+
+func TestDispatcherHandler_LayeredModeBasicFlow(t *testing.T) {
+	h := NewDispatcherHandler(nil)
+
+	// 配置分层匹配器
+	executors := []matcher.ExecutorTaskConfig{
+		{
+			ExecutorID:      "dev-executor",
+			ExecutorName:    "dev-executor",
+			RoutingKeywords: []string{"开发", "dev"},
+			Keywords:        []string{"土豆"},
+			TaskName:        "potato-dev-restart",
+			Script:          "/scripts/potato_restart.sh",
+			Names: matcher.TaskNames{
+				Primary: "重启",
+				Aliases: []string{"重启", "restart"},
+			},
+		},
+	}
+
+	h.SetLayeredMatcher(matcher.NewLayeredMatcher(executors, nil))
+
+	// 验证匹配器已设置
+	if h.layeredMatcher == nil {
+		t.Fatal("layeredMatcher should be set")
+	}
+
+	// 测试匹配
+	result := h.layeredMatcher.Match(context.Background(), matcher.LayeredMatchInput{
+		UserInput: "土豆开发服重启",
+	})
+
+	if result.HasNegation {
+		t.Error("Should not detect negation")
+	}
+
+	if len(result.Matches) != 1 {
+		t.Fatalf("Expected 1 match, got %d", len(result.Matches))
+	}
+
+	match := result.Matches[0]
+	if match.ExecutorID != "dev-executor" {
+		t.Errorf("ExecutorID = %s, want dev-executor", match.ExecutorID)
+	}
+
+	if match.Operation != "重启" {
+		t.Errorf("Operation = %s, want 重启", match.Operation)
+	}
+
+	if match.TaskName != "potato-dev-restart" {
+		t.Errorf("TaskName = %s, want potato-dev-restart", match.TaskName)
+	}
+
+	if match.Script != "/scripts/potato_restart.sh" {
+		t.Errorf("Script = %s, want /scripts/potato_restart.sh", match.Script)
 	}
 }

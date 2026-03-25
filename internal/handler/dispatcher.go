@@ -7,7 +7,6 @@ import (
 
 	"github.com/SunneeYang/lark-bots/internal/bot"
 	"github.com/SunneeYang/lark-bots/internal/common"
-	"github.com/SunneeYang/lark-bots/internal/embedding"
 	"github.com/SunneeYang/lark-bots/internal/handler/matcher"
 )
 
@@ -25,31 +24,25 @@ type SemanticMatchConfig struct {
 type DispatcherHandler struct {
 	*BaseHandler
 
-	userWhiteList map[string]bool
-	taskWhiteList map[string]bool
-	matcher       *matcher.CascadeMatcher
+	userWhiteList   map[string]bool
+	taskWhiteList   map[string]bool       // 旧模式：任务名白名单
+	layeredMatcher  *matcher.LayeredMatcher // 新模式：分层匹配器
 }
 
 // NewDispatcherHandler 创建分发机器人处理器
+// semanticCfg 用于旧模式精确匹配 + 语义匹配
 func NewDispatcherHandler(semanticCfg *SemanticMatchConfig) *DispatcherHandler {
-	h := &DispatcherHandler{
-		BaseHandler:   NewBaseHandler(),
-		userWhiteList: make(map[string]bool),
+	return &DispatcherHandler{
+		BaseHandler:    NewBaseHandler(),
+		userWhiteList:  make(map[string]bool),
 		taskWhiteList: make(map[string]bool),
 	}
+}
 
-	// 初始化匹配器：精确匹配 + 语义匹配
-	matchers := []matcher.TaskMatcher{matcher.NewExactMatcher()}
-
-	if semanticCfg != nil && semanticCfg.Enabled {
-		provider := embedding.NewGLMProvider(semanticCfg.APIKey, semanticCfg.Model)
-		embeddingMatcher := matcher.NewEmbeddingMatcher(provider, semanticCfg.Threshold)
-		matchers = append(matchers, embeddingMatcher)
-	}
-
-	h.matcher = matcher.NewCascadeMatcher(matchers...)
-
-	return h
+// SetLayeredMatcher 设置分层匹配器（用于新配置格式）
+// 调用此方法后，Dispatcher 进入分层匹配模式，不再使用 taskWhiteList
+func (h *DispatcherHandler) SetLayeredMatcher(layeredMatcher *matcher.LayeredMatcher) {
+	h.layeredMatcher = layeredMatcher
 }
 
 // SetAllowedUsers 设置允许的用户列表
@@ -60,7 +53,7 @@ func (h *DispatcherHandler) SetAllowedUsers(users []string) {
 	}
 }
 
-// SetAllowedTasks 设置允许的任务列表
+// SetAllowedTasks 设置允许的任务列表（仅旧模式使用）
 func (h *DispatcherHandler) SetAllowedTasks(tasks []string) {
 	h.taskWhiteList = make(map[string]bool)
 	for _, task := range tasks {
@@ -68,7 +61,7 @@ func (h *DispatcherHandler) SetAllowedTasks(tasks []string) {
 	}
 }
 
-// Handle 处理消息
+// Handle 处理消息（支持新旧两种配置格式）
 func (h *DispatcherHandler) Handle(ctx context.Context, event interface{}, botClient *bot.BotClient) error {
 	// 解析事件
 	senderID, err := common.ExtractSenderID(event)
@@ -92,19 +85,88 @@ func (h *DispatcherHandler) Handle(ctx context.Context, event interface{}, botCl
 		return fmt.Errorf("解析消息内容失败: %w", err)
 	}
 
-	// 群聊时：剥离飞书的 @mention 标记（格式: "@_user_xxx task_name"）
+	// 群聊时：剥离飞书的 @mention 标记
 	message = h.stripAtMention(message)
 
-	// 获取候选任务列表
+	chatType, _ := common.ExtractChatType(event)
+
+	// 根据是否配置了分层匹配器决定使用哪种模式
+	if h.layeredMatcher != nil {
+		return h.handleLayeredMode(ctx, event, message, chatType, botClient)
+	}
+	return h.handleLegacyMode(ctx, event, message, chatType, botClient)
+}
+
+// ===== 新分层匹配模式 =====
+
+// handleLayeredMode 使用分层匹配器处理消息
+func (h *DispatcherHandler) handleLayeredMode(ctx context.Context, event interface{}, message, chatType string, botClient *bot.BotClient) error {
+	result := h.layeredMatcher.Match(ctx, matcher.LayeredMatchInput{UserInput: message})
+
+	// 否定检测
+	if result.HasNegation {
+		replyMsg := "检测到否定意图（如「不要」「别」），请重新描述你要执行的操作"
+		if err := h.replyToUser(event, replyMsg, botClient); err != nil {
+			return fmt.Errorf("回复用户失败: %w", err)
+		}
+		return fmt.Errorf("检测到否定意图")
+	}
+
+	// 多意图检测
+	if len(result.Matches) > 1 {
+		replyMsg := "检测到多个匹配的任务，请一次只说一个服务器和一个操作"
+		if err := h.replyToUser(event, replyMsg, botClient); err != nil {
+			return fmt.Errorf("回复用户失败: %w", err)
+		}
+		return fmt.Errorf("多意图请求: %d 个匹配", len(result.Matches))
+	}
+
+	// 无匹配
+	if len(result.Matches) == 0 {
+		replyMsg := "未找到匹配的任务，请检查输入是否包含服务器名和操作（如「土豆开发服重启」）"
+		if err := h.replyToUser(event, replyMsg, botClient); err != nil {
+			return fmt.Errorf("回复用户失败: %w", err)
+		}
+		return fmt.Errorf("未找到匹配任务")
+	}
+
+	// 单个匹配，执行
+	match := result.Matches[0]
+	cmd := BuildTaskCommand(match.TaskName)
+	msgToSend := cmd.String()
+
+	fmt.Printf("📤 [%s] 分发任务 (分层匹配): %s → %s\n", botClient.Name, message, msgToSend)
+
+	if err := h.SendToGroup(msgToSend, botClient); err != nil {
+		return fmt.Errorf("分发任务失败: %w", err)
+	}
+
+	// 私聊回复用户
+	if chatType == "p2p" {
+		replyMsg := fmt.Sprintf("任务 [%s %s] 已转发", match.ExecutorName, match.Operation)
+		if err := h.replyToUser(event, replyMsg, botClient); err != nil {
+			return fmt.Errorf("回复用户失败: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// ===== 旧精确匹配模式 =====
+
+// handleLegacyMode 使用旧级联匹配器处理消息
+func (h *DispatcherHandler) handleLegacyMode(ctx context.Context, event interface{}, message, chatType string, botClient *bot.BotClient) error {
 	candidates := h.getTaskCandidates()
 	if len(candidates) == 0 {
 		return fmt.Errorf("无可用任务")
 	}
 
-	// 任务匹配（使用级联匹配器）
-	result, err := h.matcher.Match(ctx, message, candidates)
+	// 初始化旧匹配器（精确匹配）
+	matchers := []matcher.TaskMatcher{matcher.NewExactMatcher()}
+	cascade := matcher.NewCascadeMatcher(matchers...)
+
+	result, err := cascade.Match(ctx, message, candidates)
 	if err != nil {
-		fmt.Printf("⚠️ [%s] 任务匹配失败: %v\n", botClient.Name, err)
 		return fmt.Errorf("任务匹配失败: %w", err)
 	}
 
@@ -114,27 +176,14 @@ func (h *DispatcherHandler) Handle(ctx context.Context, event interface{}, botCl
 
 	matchedTask := result.Matched
 
-	// 日志输出匹配信息
-	if result.Method == "exact" {
-		fmt.Printf("📤 [%s] 分发任务 (精确匹配): %s\n", botClient.Name, matchedTask)
-	} else {
-		fmt.Printf("📤 [%s] 分发任务 (语义匹配: %.0f%%): '%s' → %s\n",
-			botClient.Name, result.Confidence*100, message, matchedTask)
-	}
+	fmt.Printf("📤 [%s] 分发任务 (精确匹配): %s\n", botClient.Name, matchedTask)
 
-	// 发送到机器人群（纯文本，executor 监听群里所有消息）
-	chatType, _ := common.ExtractChatType(event)
 	if err := h.SendToGroup(matchedTask, botClient); err != nil {
 		return fmt.Errorf("分发任务失败: %w", err)
 	}
 
-	// 私聊时额外回复用户告知已转发
 	if chatType == "p2p" {
-		confStr := fmt.Sprintf("%.0f%%", result.Confidence*100)
-		if result.Method == "exact" {
-			confStr = "100%"
-		}
-		replyMsg := fmt.Sprintf("任务 [%s] 已转发（匹配度: %s）", matchedTask, confStr)
+		replyMsg := fmt.Sprintf("任务 [%s] 已转发", matchedTask)
 		if err := h.replyToUser(event, replyMsg, botClient); err != nil {
 			return fmt.Errorf("回复用户失败: %w", err)
 		}
@@ -143,7 +192,8 @@ func (h *DispatcherHandler) Handle(ctx context.Context, event interface{}, botCl
 	return nil
 }
 
-// getTaskCandidates 获取候选任务列表（从 taskWhiteList）
+// ===== 辅助方法 =====
+
 func (h *DispatcherHandler) getTaskCandidates() []string {
 	candidates := make([]string, 0, len(h.taskWhiteList))
 	for task := range h.taskWhiteList {
@@ -153,16 +203,12 @@ func (h *DispatcherHandler) getTaskCandidates() []string {
 }
 
 // stripAtMention 剥离飞书的 @mention 标记
-// 群聊中用户 @ 机器人时，消息内容会包含 "@_user_xxx task_name" 前缀
 func (h *DispatcherHandler) stripAtMention(message string) string {
 	message = strings.TrimSpace(message)
-	// 匹配 @_user_xxx 前缀（飞书使用此格式编码 @mention）
 	if strings.HasPrefix(message, "@") {
 		rest := strings.TrimPrefix(message, "@")
-		// 跳过 user ID 部分，到达实际命令
 		parts := strings.Fields(rest)
 		if len(parts) > 0 {
-			// 如果第一部分是 user ID，则取后续部分
 			if strings.HasPrefix(parts[0], "_user_") || strings.HasPrefix(parts[0], "_bot_") {
 				return strings.TrimSpace(strings.Join(parts[1:], " "))
 			}

@@ -15,6 +15,21 @@ var (
 	ErrInvalidYAML    = errors.New("invalid YAML format")
 )
 
+// ExecutorTask 定义执行机器人的单个任务配置
+type ExecutorTask struct {
+	// Name 唯一任务名称（全局唯一，用于 dispatcher 发送和 executor 认领）
+	// 格式建议：{server}-{env}-{operation}，如 "potato-dev-restart"
+	Name string `yaml:"name"`
+	// Keywords 用于精确匹配用户输入中的关键实体（如服务器名）
+	// 用户输入中包含任意一个 keyword 即命中该任务
+	Keywords []string `yaml:"keywords"`
+	// Names 操作名候选列表，支持别名
+	// 用户输入经 keywords 过滤后的剩余文本会与这些名称进行匹配
+	Names []string `yaml:"names"`
+	// Script 对应脚本路径
+	Script string `yaml:"script"`
+}
+
 // BotConfig 定义单个机器人的配置
 type BotConfig struct {
 	Name      string `yaml:"name"`
@@ -27,8 +42,11 @@ type BotConfig struct {
 
 	// Executor 特有配置
 	AllowedDispatchers []string          `yaml:"allowed_dispatchers,omitempty"` // 允许的 dispatcher app_id 列表
-	TaskScripts        map[string]string `yaml:"task_scripts,omitempty"`      // 任务名 -> 脚本路径映射（仅 executor 角色）
-	PollInterval string `yaml:"poll_interval,omitempty"` // 轮询间隔（如 "1s", "500ms"，仅 executor 角色，默认 "1s"）
+	RoutingKeywords    []string          `yaml:"routing_keywords,omitempty"`    // Executor 路由关键词（粗粒度模糊匹配）
+	Description        string            `yaml:"description,omitempty"`          // Executor 描述（用于日志输出）
+	Tasks              []ExecutorTask    `yaml:"tasks,omitempty"`               // 任务列表（支持分层匹配）
+	TaskScripts        map[string]string `yaml:"task_scripts,omitempty"`        // 旧版任务映射（兼容exact模式）
+	PollInterval       string            `yaml:"poll_interval,omitempty"`      // 轮询间隔（如 "1s", "500ms"，默认 "1s"）
 
 	// 语义匹配配置
 	SemanticMatch *SemanticMatchConfig `yaml:"semantic_match,omitempty"`
