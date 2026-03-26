@@ -45,25 +45,6 @@ else
     BOT_ARGS="start --bots=$BOT_LIST"
 fi
 
-# Detect OS
-OS_TYPE=$(uname -s)
-ARCH_TYPE=$(uname -m)
-
-# Determine which binary to use
-if [[ "$OS_TYPE" == "Darwin" ]]; then
-    if [[ "$ARCH_TYPE" == "arm64" ]]; then
-        BINARY="bot-service-darwin-arm64"
-    else
-        echo "❌ Error: macOS AMD64 is not supported. Please use an Apple Silicon Mac."
-        exit 1
-    fi
-elif [[ "$OS_TYPE" == "Linux" ]]; then
-    BINARY="bot-service-linux-amd64"
-else
-    echo "❌ Error: Unsupported OS: $OS_TYPE"
-    exit 1
-fi
-
 # Check if binary exists
 if [[ ! -f "$BINARY" ]]; then
     echo "❌ Error: Binary '$BINARY' not found. Please run ./build.sh first."
@@ -72,7 +53,7 @@ fi
 
 # Function to find and display running bot-service processes
 check_running_services() {
-    local pids=$(pgrep -f "bot-service-" 2>/dev/null | sort)
+    local pids=$(pgrep -f "bot-service" 2>/dev/null | grep -v "bot-service-" | sort)
 
     if [[ -n "$pids" ]]; then
         echo "⚠️  Found ${#pids[@]} bot-service process(es) already running:"
@@ -124,7 +105,6 @@ mkdir -p logs
 # Start in background
 echo "🚀 Starting bot-service in background..."
 echo "   Binary: $BINARY"
-echo "   OS: $OS_TYPE $ARCH_TYPE"
 echo "   Command: $BOT_ARGS"
 
 nohup ./"$BINARY" $BOT_ARGS > logs/bot-service.log 2>&1 &
