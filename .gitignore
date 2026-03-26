@@ -1,5 +1,6 @@
 # 编译产物
 /bot-service
+/bot-service-*
 *.exe
 *.exe~
 *.dll
@@ -7,6 +8,10 @@
 *.dylib
 *.test
 *.out
+
+# 进程 ID 文件
+*.pid
+bot-service.pid
 
 # 配置文件（包含敏感信息）
 configs/bots.yaml

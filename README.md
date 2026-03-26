@@ -160,7 +160,7 @@ vim configs/bots.yaml
 
 ### 3. 启动服务
 
-**开发模式启动:**
+#### 开发模式启动
 ```bash
 # 启动所有机器人
 go run cmd/bot-service/main.go start --all
@@ -172,19 +172,145 @@ go run cmd/bot-service/main.go start --bots=dispatcher,dev-executor
 go run cmd/bot-service/main.go start --config=/path/to/config.yaml
 ```
 
-**生产模式启动:**
-```bash
-# 构建可执行文件
-go build -o bot-service cmd/bot-service/main.go
+#### 生产模式启动（使用便捷脚本）
 
-# 启动服务
-./bot-service start --all
+项目提供了四个便捷脚本用于构建和管理服务：
+
+##### 1. build.sh - 构建脚本
+
+自动检测当前平台并构建对应的可执行文件。
+
+```bash
+./build.sh
 ```
 
-**启动参数说明:**
+**支持的平台:**
+- macOS ARM64 (Apple Silicon)
+- Linux AMD64
+
+**输出:**
+- `bot-service-darwin-arm64` (macOS)
+- `bot-service-linux-amd64` (Linux)
+
+##### 2. start.sh - 启动脚本
+
+在后台启动服务，支持多种启动方式。
+
+```bash
+# 启动指定机器人（必需参数）
+./start.sh dispatcher
+
+# 启动多个机器人（逗号分隔）
+./start.sh dispatcher,dev-executor
+
+# 启动所有机器人
+./start.sh --all
+
+# 使用 --bots 参数（等效）
+./start.sh --bots=dispatcher,executor
+
+# 查看帮助
+./start.sh --help
+```
+
+**特性:**
+- ✅ 自动检测操作系统并使用对应的二进制文件
+- ✅ 启动前检查是否有服务已在运行，防止重复启动
+- ✅ 后台运行，日志输出到 `logs/bot-service.log`
+- ✅ 自动创建 PID 文件供管理脚本使用
+- ✅ 支持通过机器人名字（不是 role）启动
+
+**错误处理:**
+如果已有服务在运行，会显示详细信息并拒绝启动：
+```
+🔍 Checking for running services...
+⚠️  Found 1 bot-service process(es) already running:
+
+   PID: 68745  CPU: 0.0%  MEM: 0.1%
+   CMD: ./bot-service-darwin-arm64 start --bots=dispatcher
+
+❌ Cannot start new service while another is running
+
+To stop the running service(s):
+  ./stop.sh              # Stop single process (auto-detected)
+  ./stop.sh <pid>        # Stop specific PID
+```
+
+##### 3. status.sh - 状态查询脚本
+
+查看服务运行状态和日志。
+
+```bash
+# 查看服务状态
+./status.sh
+
+# 查看指定 PID 的状态
+./status.sh 12345
+```
+
+**输出示例:**
+```
+✅ Bot service is running
+   PID: 68745
+   CPU: 0.0%  MEM: 0.1%  TIME: 00:05:23
+   CMD: ./bot-service-darwin-arm64 start --bots=dispatcher
+
+Recent logs:
+----------------------------------------
+[服务最近日志内容...]
+```
+
+**多进程支持:**
+如果发现多个 bot-service 进程，会显示所有进程的详细信息。
+
+##### 4. stop.sh - 停止脚本
+
+停止运行中的服务。
+
+```bash
+# 自动检测并停止（单个进程）
+./stop.sh
+
+# 停止指定 PID
+./stop.sh 12345
+```
+
+**智能进程查找:**
+脚本按以下优先级查找进程：
+1. **命令行参数 PID**（最高优先级）
+2. **PID 文件**（如果存在且进程存活）
+3. **进程名搜索**（通过 `pgrep -f "bot-service-"`）
+
+**特性:**
+- ✅ 不依赖 PID 文件，可以停止任何方式启动的服务
+- ✅ 支持停止指定 PID 的进程
+- ✅ 发现多个进程时显示列表供选择
+- ✅ 自动清理过期的 PID 文件
+- ✅ 优雅停止（SIGTERM），超时后强制杀死（SIGKILL）
+
+##### 脚本使用场景
+
+| 场景 | 推荐命令 |
+|------|---------|
+| 首次部署 | `./build.sh && ./start.sh dispatcher` |
+| 日常启动 | `./start.sh dispatcher` |
+| 查看状态 | `./status.sh` |
+| 停止服务 | `./stop.sh` |
+| 直接运行二进制 | `./bot-service-darwin-arm64 start --bots=dispatcher &` |
+| 停止直接运行的 | `./stop.sh`（自动通过进程名查找） |
+
+#### 启动参数说明
+
+所有脚本支持的参数：
+
 - `--config, -c`: 配置文件路径（默认: `configs/bots.yaml`）
 - `--bots, -b`: 要启动的机器人列表（逗号分隔）
 - `--all`: 启动所有机器人
+- `-h, --help`: 显示帮助信息
+
+**重要提示:**
+- 脚本通过机器人的**名字**（`name` 字段）而不是类型（`role`）来启动
+- 配置文件中的机器人名字示例：`dispatcher`, `dev-executor`, `test-executor`
 
 ### 4. 使用示例
 
@@ -306,10 +432,25 @@ lark-bot-service/
 │   └── bots.yaml             # 实际配置（包含密钥）
 ├── test/
 │   └── scripts/              # 测试脚本
+├── logs/                     # 服务日志目录（自动创建）
+│   └── bot-service.log      # 服务运行日志
+├── build.sh                  # 构建脚本（自动检测平台）
+├── start.sh                  # 启动脚本（后台运行）
+├── stop.sh                   # 停止脚本（智能进程查找）
+├── status.sh                 # 状态查询脚本
 ├── go.mod
 ├── go.sum
 └── README.md
 ```
+
+**管理脚本说明:**
+
+| 脚本 | 功能 | 依赖 |
+|------|------|------|
+| `build.sh` | 构建当前平台的可执行文件 | Go 编译器 |
+| `start.sh` | 后台启动服务，防止重复启动 | 构建好的二进制文件 |
+| `stop.sh` | 停止服务，支持多种查找方式 | `pgrep` 命令 |
+| `status.sh` | 查看服务状态和日志 | `pgrep` 命令 |
 
 ## 开发指南
 
