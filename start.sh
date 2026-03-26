@@ -45,6 +45,9 @@ else
     BOT_ARGS="start --bots=$BOT_LIST"
 fi
 
+# Binary name (same for all platforms)
+BINARY="bot-service"
+
 # Check if binary exists
 if [[ ! -f "$BINARY" ]]; then
     echo "❌ Error: Binary '$BINARY' not found. Please run ./build.sh first."
