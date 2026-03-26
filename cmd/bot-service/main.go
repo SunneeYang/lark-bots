@@ -234,6 +234,7 @@ func runStart(cmd *cobra.Command, args []string) {
 		if botCfg.Role == "executor" {
 			executorHandler := handler.NewExecutorHandler()
 			executorHandler.SetAllowedDispatchers(botCfg.AllowedDispatchers)
+			executorHandler.SetTasks(botCfg.Tasks)
 			executorHandlers[botCfg.Name] = executorHandler
 			fmt.Printf("   ✅ executor 处理器注册成功 (bot: %s)\n", botCfg.Name)
 		}
