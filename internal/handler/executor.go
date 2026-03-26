@@ -69,6 +69,8 @@ func (h *ExecutorHandler) Handle(_ context.Context, event interface{}, botClient
 		return fmt.Errorf("解析任务命令失败: %w", err)
 	}
 
+	fmt.Printf("📋 [%s] 解析任务: taskName=%s, requester=%s\n", botClient.Name, taskCmd.TaskName, taskCmd.Requester)
+
 	// 执行任务
 	return h.executeTask(taskCmd, botClient)
 }
@@ -93,8 +95,11 @@ func (h *ExecutorHandler) executeTask(taskCmd *TaskCommand, botClient *bot.BotCl
 	taskDetail, ok := h.tasks[taskName]
 	if !ok {
 		// 任务不存在，静默忽略（可能是发给其他 executor 的）
+		fmt.Printf("⚠️  [%s] 任务不存在: %s (可用任务: %v)\n", botClient.Name, taskName, mapKeys(h.tasks))
 		return nil
 	}
+
+	fmt.Printf("✅ [%s] 找到任务配置: script=%s, params=%v\n", botClient.Name, taskDetail.Script, taskDetail.Params)
 
 	// 3. 执行脚本
 	output, err := h.executeScript(taskDetail.Script, taskDetail.Params)
@@ -154,3 +159,11 @@ func joinLines(lines []string) string {
 	return result
 }
 
+
+func mapKeys(m map[string]config.TaskDetail) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
