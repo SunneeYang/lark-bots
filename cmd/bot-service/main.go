@@ -233,6 +233,7 @@ func runStart(cmd *cobra.Command, args []string) {
 	for _, botCfg := range cfg.Bots {
 		if botCfg.Role == "executor" {
 			executorHandler := handler.NewExecutorHandler()
+			executorHandler.SetRobotGroupID(cfg.RobotGroupID)
 			executorHandler.SetAllowedDispatchers(botCfg.AllowedDispatchers)
 			executorHandler.SetTasks(botCfg.Tasks)
 			executorHandlers[botCfg.Name] = executorHandler
@@ -248,6 +249,13 @@ func runStart(cmd *cobra.Command, args []string) {
 	var pollers []MessagePoller
 	for _, botCfg := range cfg.Bots {
 		if botCfg.Role == "executor" {
+			// 获取对应的 ExecutorHandler
+			executorHandler := executorHandlers[botCfg.Name]
+			if executorHandler == nil {
+				fmt.Printf("   ⚠️  %s 未找到对应的 handler，跳过\n", botCfg.Name)
+				continue
+			}
+
 			// 获取 executor 的 BotClient
 			var executorBot *bot.BotClient
 			for _, bc := range activeBots {
@@ -266,7 +274,7 @@ func runStart(cmd *cobra.Command, args []string) {
 				dispatchersMap[d] = true
 			}
 
-			// 构建任务名称到脚本的映射（新格式）
+			// 构建任务名称到脚本的映射（用于轮询器兼容）
 			taskNameToScript := make(map[string]string)
 			for taskName, taskDetail := range botCfg.Tasks {
 				taskNameToScript[taskName] = taskDetail.Script
@@ -279,8 +287,9 @@ func runStart(cmd *cobra.Command, args []string) {
 				executorBot,
 				cfg.RobotGroupID,
 				dispatchersMap,
-				botCfg.TaskScripts,
+				executorHandler,  // 传递 ExecutorHandler 引用
 				taskNameToScript,
+				botCfg.Tasks,      // 传递完整 Tasks 配置（包含 params）
 				pollInterval,
 				maxTasks,
 			)

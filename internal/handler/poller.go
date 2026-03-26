@@ -12,6 +12,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/SunneeYang/lark-bots/internal/bot"
 	"github.com/SunneeYang/lark-bots/internal/common"
+	"github.com/SunneeYang/lark-bots/internal/config"
 )
 
 // MessagePoller 消息轮询器，定期从飞书 API 获取群消息
@@ -22,8 +23,10 @@ type MessagePoller struct {
 	lastRequestTime int64 // 上次请求时间（毫秒时间戳）
 
 	allowedDispatchers map[string]bool
-	taskScripts       map[string]string // 旧格式：taskScripts（兼容）
-	taskNameToScript  map[string]string // 新格式：任务名称 -> 脚本路径
+	executorHandler  *ExecutorHandler       // 新增：ExecutorHandler 引用
+	taskScripts       map[string]string     // 旧格式：taskScripts（兼容）
+	taskNameToScript  map[string]string     // 任务名称 -> 脚本路径
+	tasks             map[string]config.TaskDetail // 新增：完整任务配置（包含 params）
 	sender           *common.Sender
 	stopCh           chan struct{}
 	wg               sync.WaitGroup
@@ -40,7 +43,7 @@ type MessagePoller struct {
 
 // NewMessagePoller 创建消息轮询器
 // maxTasks: 最大并发任务数，0 或负数表示不限制
-func NewMessagePoller(botClient *bot.BotClient, robotGroupID string, allowedDispatchers map[string]bool, taskScripts map[string]string, taskNameToScript map[string]string, pollInterval time.Duration, maxTasks int) *MessagePoller {
+func NewMessagePoller(botClient *bot.BotClient, robotGroupID string, allowedDispatchers map[string]bool, executorHandler *ExecutorHandler, taskNameToScript map[string]string, tasks map[string]config.TaskDetail, pollInterval time.Duration, maxTasks int) *MessagePoller {
 	sender := common.NewSender(botClient.LarkClient)
 	sender.SetRobotGroupID(robotGroupID)
 
@@ -49,8 +52,9 @@ func NewMessagePoller(botClient *bot.BotClient, robotGroupID string, allowedDisp
 		robotGroupID:      robotGroupID,
 		pollInterval:      pollInterval,
 		allowedDispatchers: allowedDispatchers,
-		taskScripts:      taskScripts,
 		taskNameToScript: taskNameToScript,
+		executorHandler:  executorHandler,  // 新增：ExecutorHandler 引用
+		tasks:            tasks,            // 新增：完整任务配置（包含 params）
 		sender:           sender,
 		stopCh:           make(chan struct{}),
 		dedupWindow:      2 * time.Minute, // 去重时间窗口，保留最近 2 分钟的消息 ID
@@ -252,39 +256,48 @@ func parseTaskContent(content string) (string, error) {
 }
 
 // executeTask 执行任务并发送结果到群（流式输出，单条消息实时更新）
-// 兼容旧格式（纯文本任务名）和新格式（TaskCommand 结构化消息）
+// 支持新格式 TaskCommand（JSON），支持参数化任务
 func (p *MessagePoller) executeTask(ctx context.Context, taskInput string) error {
-	// 尝试解析为 TaskCommand 格式
-	taskCmd, err := ParseTaskCommand(taskInput)
-	var scriptPath string
-	var taskName string
+	// 1. 解析 JSON 格式的任务命令
+	taskCmd, err := ParseTaskCommandJSON(taskInput)
+	if err != nil {
+		return fmt.Errorf("解析任务命令失败: %w", err)
+	}
 
-	if err == nil {
-		// 新格式：TaskCommand，只包含任务名称
-		taskName = taskCmd.TaskName
+	taskName := taskCmd.TaskName
+	requester := taskCmd.Requester
 
-		// 在自己的任务映射表中查找脚本
-		var ok bool
-		scriptPath, ok = p.taskNameToScript[taskName]
-		if !ok {
-			// 未找到，静默忽略（可能是发给其他 executor 的）
-			return nil
-		}
-	} else {
-		// 旧格式：纯文本任务名，从 taskScripts 查找
-		taskName = strings.TrimSpace(taskInput)
-		if taskName == "" {
-			return nil // 空消息，静默忽略
-		}
-		var ok bool
-		scriptPath, ok = p.taskScripts[taskName]
-		if !ok {
-			return nil // 任务不在自己的任务列表中，静默忽略
+	// 2. 从配置中查找任务详细配置（支持参数化任务）
+	var taskDetail config.TaskDetail
+	var ok bool
+
+	// 优先从新格式（tasks）查找
+	if p.tasks != nil {
+		taskDetail, ok = p.tasks[taskName]
+	}
+
+	// 如果新格式没找到，尝试从旧格式（taskNameToScript）查找
+	if !ok && p.taskNameToScript != nil {
+		scriptPath, found := p.taskNameToScript[taskName]
+		if found {
+			taskDetail = config.TaskDetail{
+				Script: scriptPath,
+				Params: []string{}, // 旧格式默认无参数
+			}
+			ok = true
 		}
 	}
 
-	// 1. 发送初始卡片（带 update_multi: true，允许后续更新）
-	initialCard := p.buildTaskCard(taskName, "running", "正在执行...")
+	if !ok {
+		// 任务不存在，静默忽略（可能是发给其他 executor 的）
+		fmt.Printf("⚠️  [%s] 任务不存在: %s\n", p.botClient.Name, taskName)
+		return nil
+	}
+
+	fmt.Printf("✅ [%s] 找到任务配置: script=%s, params=%v\n", p.botClient.Name, taskDetail.Script, taskDetail.Params)
+
+	// 3. 发送初始卡片（带 update_multi: true，允许后续更新）
+	initialCard := p.buildTaskCard(taskName, requester, "running", "正在执行...")
 	msgID, err := p.sendCardMessage(ctx, initialCard)
 	if err != nil {
 		fmt.Printf("❌ [%s] 发送卡片失败: %v\n", p.botClient.Name, err)
@@ -292,17 +305,17 @@ func (p *MessagePoller) executeTask(ctx context.Context, taskInput string) error
 	}
 	fmt.Printf("📤 [%s] 任务开始: %s, msg_id=%s\n", p.botClient.Name, taskName, msgID)
 
-	// 2. 执行脚本并实时更新卡片
-	execCmd := exec.Command(scriptPath)
+	// 4. 执行脚本并实时更新卡片（支持参数化任务）
+	execCmd := exec.Command(taskDetail.Script, taskDetail.Params...)
 	stdout, err1 := execCmd.StdoutPipe()
 	stderr, err2 := execCmd.StderrPipe()
 	if err1 != nil || err2 != nil {
-		p.patchCardMessage(ctx, msgID, p.buildTaskCard(taskName, "failed", fmt.Sprintf("启动失败: %v", err1)))
+		p.patchCardMessage(ctx, msgID, p.buildTaskCard(taskName, requester, "failed", fmt.Sprintf("启动失败: %v", err1)))
 		return err1
 	}
 
 	if err := execCmd.Start(); err != nil {
-		p.patchCardMessage(ctx, msgID, p.buildTaskCard(taskName, "failed", fmt.Sprintf("启动失败: %v", err)))
+		p.patchCardMessage(ctx, msgID, p.buildTaskCard(taskName, requester, "failed", fmt.Sprintf("启动失败: %v", err)))
 		return err
 	}
 
@@ -339,7 +352,7 @@ func (p *MessagePoller) executeTask(ctx context.Context, taskInput string) error
 
 		// 定期更新卡片显示进度
 		if time.Since(lastUpdate) > 500*time.Millisecond {
-			p.updateCardProgress(ctx, msgID, taskName, "running", outputBuf.String(), errorBuf.String())
+			p.updateCardProgress(ctx, msgID, taskName, requester, "running", outputBuf.String(), errorBuf.String())
 			lastUpdate = time.Now()
 		}
 	}
@@ -347,12 +360,12 @@ func (p *MessagePoller) executeTask(ctx context.Context, taskInput string) error
 	// 等待命令结束
 	execCmd.Wait()
 
-	// 3. 更新最终结果
+	// 5. 更新最终结果
 	if execCmd.ProcessState.Success() {
-		p.updateCardProgress(ctx, msgID, taskName, "success", outputBuf.String(), errorBuf.String())
+		p.updateCardProgress(ctx, msgID, taskName, requester, "success", outputBuf.String(), errorBuf.String())
 		fmt.Printf("✅ [%s] 任务完成: %s\n", p.botClient.Name, taskName)
 	} else {
-		p.updateCardProgress(ctx, msgID, taskName, "failed", outputBuf.String(), errorBuf.String())
+		p.updateCardProgress(ctx, msgID, taskName, requester, "failed", outputBuf.String(), errorBuf.String())
 		fmt.Printf("❌ [%s] 任务失败: %s\n", p.botClient.Name, taskName)
 	}
 
@@ -360,7 +373,7 @@ func (p *MessagePoller) executeTask(ctx context.Context, taskInput string) error
 }
 
 // buildTaskCard 构建任务卡片（带 update_multi: true）
-func (p *MessagePoller) buildTaskCard(taskName, status, output string) string {
+func (p *MessagePoller) buildTaskCard(taskName, requester, status, output string) string {
 	statusText := map[string]string{
 		"running": "⏳ 执行中",
 		"success": "✅ 执行成功",
@@ -379,6 +392,9 @@ func (p *MessagePoller) buildTaskCard(taskName, status, output string) string {
 		formattedOutput = "正在执行..."
 	}
 
+	// 卡片标题包含发布者信息
+	title := fmt.Sprintf("%s [%s] - 发布者: %s", statusText, taskName, requester)
+
 	// 飞书交互式卡片 JSON 格式，必须包含 update_multi: true 才能更新
 	card := map[string]interface{}{
 		"config": map[string]bool{
@@ -387,7 +403,7 @@ func (p *MessagePoller) buildTaskCard(taskName, status, output string) string {
 		},
 		"header": map[string]interface{}{
 			"title": map[string]string{
-				"content": fmt.Sprintf("%s [%s]", statusText, taskName),
+				"content": title,
 				"tag":     "plain_text",
 			},
 			"template": statusColor,
@@ -436,7 +452,7 @@ func (p *MessagePoller) sendCardMessage(ctx context.Context, card string) (strin
 }
 
 // updateCardProgress 更新卡片进度
-func (p *MessagePoller) updateCardProgress(ctx context.Context, messageID, taskName, status, output, errorMsg string) {
+func (p *MessagePoller) updateCardProgress(ctx context.Context, messageID, taskName, requester, status, output, errorMsg string) {
 	formattedOutput := strings.TrimSpace(output)
 	if formattedOutput == "" {
 		formattedOutput = "正在执行..."
@@ -446,7 +462,7 @@ func (p *MessagePoller) updateCardProgress(ctx context.Context, messageID, taskN
 		formattedOutput += fmt.Sprintf("\n\n**错误:**\n```\n%s\n```", strings.TrimSpace(errorMsg))
 	}
 
-	card := p.buildTaskCard(taskName, status, formattedOutput)
+	card := p.buildTaskCard(taskName, requester, status, formattedOutput)
 	p.patchCardMessage(ctx, messageID, card)
 }
 
