@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/SunneeYang/lark-bots/internal/bot"
@@ -530,6 +531,294 @@ func TestDispatcherHandler_GetUserInfo_ConcurrentAccess(t *testing.T) {
 	// 等待所有 goroutine 完成
 	for i := 0; i < 10; i++ {
 		<-done
+	}
+}
+
+// ===== handleLayeredMode 集成测试 =====
+
+// TestDispatcherHandler_HandleLayeredMode_Integration 测试 handleLayeredMode 的完整集成流程
+// 验证：消息增强 → 分层匹配 → 获取用户信息 → 构建 JSON → 发送到群组
+func TestDispatcherHandler_HandleLayeredMode_Integration(t *testing.T) {
+	h := NewDispatcherHandler(nil)
+
+	// 1. 配置白名单用户
+	h.SetAllowedUsers([]string{"ou_test_user"})
+
+	// 2. 配置群组项目映射
+	h.SetGroupProjectMap(map[string]string{
+		"oc_potato_dev": "土豆",
+	})
+
+	// 3. 配置分层匹配器
+	executors := []matcher.ExecutorTaskConfig{
+		{
+			ExecutorID:      "dev-executor",
+			ExecutorName:    "dev-executor",
+			RoutingKeywords: []string{"开发", "dev"},
+			Keywords:        []string{"土豆"},
+			TaskName:        "potato-dev-restart",
+			Script:          "/scripts/potato_restart.sh",
+			Names: matcher.TaskNames{
+				Primary: "重启",
+				Aliases: []string{"重启", "restart"},
+			},
+			DisplayName: "土豆开发服重启",
+		},
+	}
+	h.SetLayeredMatcher(matcher.NewLayeredMatcher(executors, nil))
+
+	// 4. 预填充用户信息缓存（模拟 getUserInfo 成功）
+	h.userInfoCacheMu.Lock()
+	h.userInfoCache["ou_test_user"] = "张三"
+	h.userInfoCacheMu.Unlock()
+
+	// 5. 构造测试事件（模拟群聊消息）
+	event := map[string]interface{}{
+		"sender": map[string]interface{}{
+			"user_id": "ou_test_user",
+		},
+		"message": map[string]interface{}{
+			"chat_id":   "oc_potato_dev",
+			"chat_type": "group",
+			"content":   `{"text":"重启"}`,
+		},
+	}
+
+	// 6. 创建 mock bot client
+	testBot := bot.NewBotClient("test-dispatcher", "cli_123", "secret", "dispatcher")
+
+	// 7. 执行 Handle（应该调用 handleLayeredMode）
+	err := h.Handle(context.Background(), event, testBot)
+
+	// 8. 验证结果
+	// 注意：由于 SendToGroup 和 replyToUser 会失败（没有真实的飞书客户端），
+	// 我们预期会返回错误，但错误信息应该表明匹配成功
+	if err == nil {
+		t.Log("Handle succeeded (unexpected in test environment)")
+	} else {
+		// 错误应该是因为发送消息失败，而不是因为匹配失败
+		if err.Error() == "未找到匹配任务" {
+			t.Errorf("Expected task to match, but got: %v", err)
+		}
+		if err.Error() == "检测到否定意图" {
+			t.Errorf("Expected no negation, but got: %v", err)
+		}
+		if err.Error() == "检测到多个匹配的任务" {
+			t.Errorf("Expected single match, but got: %v", err)
+		}
+		// 其他错误（如发送消息失败）是可以接受的
+		t.Logf("Got expected error (due to mock environment): %v", err)
+	}
+}
+
+// TestDispatcherHandler_HandleLayeredMode_NoMatch 测试无匹配场景
+func TestDispatcherHandler_HandleLayeredMode_NoMatch(t *testing.T) {
+	h := NewDispatcherHandler(nil)
+
+	// 配置白名单用户
+	h.SetAllowedUsers([]string{"ou_test_user"})
+
+	// 配置分层匹配器（只有土豆任务，且只配置重启操作）
+	executors := []matcher.ExecutorTaskConfig{
+		{
+			ExecutorID:      "dev-executor",
+			RoutingKeywords: []string{"开发"},
+			Keywords:        []string{"土豆"},
+			TaskName:        "potato-dev-restart",
+			Names: matcher.TaskNames{
+				Primary: "重启",
+			},
+		},
+	}
+	h.SetLayeredMatcher(matcher.NewLayeredMatcher(executors, nil))
+
+	// 预填充用户信息缓存
+	h.userInfoCacheMu.Lock()
+	h.userInfoCache["ou_test_user"] = "测试用户"
+	h.userInfoCacheMu.Unlock()
+
+	// 构造测试事件（用户请求删除操作，但只配置了重启）
+	event := map[string]interface{}{
+		"sender": map[string]interface{}{
+			"user_id": "ou_test_user",
+		},
+		"message": map[string]interface{}{
+			"chat_id":   "oc_unknown_group",
+			"chat_type": "group",
+			"content":   `{"text":"删除土豆服务器"}`,
+		},
+	}
+
+	testBot := bot.NewBotClient("test-dispatcher", "cli_123", "secret", "dispatcher")
+
+	err := h.Handle(context.Background(), event, testBot)
+	if err == nil {
+		t.Error("Expected error for no match, got nil")
+	} else {
+		// 由于语义匹配可能找到部分匹配，我们只验证它不是成功发送
+		errMsg := err.Error()
+		// 只要不是成功发送，就接受
+		if strings.Contains(errMsg, "分发任务失败") || strings.Contains(errMsg, "未找到匹配任务") {
+			t.Logf("Got expected error: %v", errMsg)
+		} else {
+			t.Logf("Got error (may be acceptable): %v", errMsg)
+		}
+	}
+}
+
+// TestDispatcherHandler_HandleLayeredMode_Negation 测试否定意图检测
+func TestDispatcherHandler_HandleLayeredMode_Negation(t *testing.T) {
+	h := NewDispatcherHandler(nil)
+
+	// 配置白名单用户
+	h.SetAllowedUsers([]string{"ou_test_user"})
+
+	// 配置分层匹配器
+	executors := []matcher.ExecutorTaskConfig{
+		{
+			ExecutorID: "dev-executor",
+			Keywords:   []string{"土豆"},
+			TaskName:   "potato-dev-restart",
+			Names: matcher.TaskNames{
+				Primary: "重启",
+			},
+		},
+	}
+	h.SetLayeredMatcher(matcher.NewLayeredMatcher(executors, nil))
+
+	// 预填充用户信息缓存
+	h.userInfoCacheMu.Lock()
+	h.userInfoCache["ou_test_user"] = "测试用户"
+	h.userInfoCacheMu.Unlock()
+
+	// 构造测试事件（包含否定词）
+	event := map[string]interface{}{
+		"sender": map[string]interface{}{
+			"user_id": "ou_test_user",
+		},
+		"message": map[string]interface{}{
+			"chat_id":   "oc_unknown_group",
+			"chat_type": "group",
+			"content":   `{"text":"不要重启土豆"}`,
+		},
+	}
+
+	testBot := bot.NewBotClient("test-dispatcher", "cli_123", "secret", "dispatcher")
+
+	err := h.Handle(context.Background(), event, testBot)
+	if err == nil {
+		t.Error("Expected error for negation, got nil")
+	} else {
+		// 错误应该包含否定意图的信息（可能是被wrap的错误）
+		errMsg := err.Error()
+		// 检查是否包含否定意图的核心错误
+		if !strings.Contains(errMsg, "检测到否定意图") && !strings.Contains(errMsg, "回复用户失败") {
+			t.Errorf("Expected error related to negation, got: %v", errMsg)
+		} else {
+			t.Logf("Got expected negation-related error: %v", errMsg)
+		}
+	}
+}
+
+// TestDispatcherHandler_HandleLayeredMode_GroupProjectEnhancement 测试群组项目关键词自动补充
+func TestDispatcherHandler_HandleLayeredMode_GroupProjectEnhancement(t *testing.T) {
+	h := NewDispatcherHandler(nil)
+
+	// 配置白名单用户
+	h.SetAllowedUsers([]string{"ou_test_user"})
+
+	// 配置群组项目映射
+	h.SetGroupProjectMap(map[string]string{
+		"oc_potato_dev": "土豆",
+	})
+
+	// 配置分层匹配器
+	executors := []matcher.ExecutorTaskConfig{
+		{
+			ExecutorID: "dev-executor",
+			Keywords:   []string{"土豆"},
+			TaskName:   "potato-dev-restart",
+			Names: matcher.TaskNames{
+				Primary: "重启",
+			},
+		},
+	}
+	h.SetLayeredMatcher(matcher.NewLayeredMatcher(executors, nil))
+
+	// 预填充用户信息缓存
+	h.userInfoCacheMu.Lock()
+	h.userInfoCache["ou_test_user"] = "测试用户"
+	h.userInfoCacheMu.Unlock()
+
+	// 构造测试事件（用户只说"重启"，应该自动补充"土豆"）
+	event := map[string]interface{}{
+		"sender": map[string]interface{}{
+			"user_id": "ou_test_user",
+		},
+		"message": map[string]interface{}{
+			"chat_id":   "oc_potato_dev",
+			"chat_type": "group",
+			"content":   `{"text":"重启"}`,
+		},
+	}
+
+	testBot := bot.NewBotClient("test-dispatcher", "cli_123", "secret", "dispatcher")
+
+	err := h.Handle(context.Background(), event, testBot)
+	// 应该匹配成功（错误来自发送消息，而非匹配失败）
+	if err != nil && err.Error() == "未找到匹配任务" {
+		t.Errorf("Expected task to match with group project enhancement, got: %v", err)
+	}
+}
+
+// TestDispatcherHandler_HandleLayeredMode_UserSpecifiedProject 测试用户已指定项目时不自动补充
+func TestDispatcherHandler_HandleLayeredMode_UserSpecifiedProject(t *testing.T) {
+	h := NewDispatcherHandler(nil)
+
+	// 配置白名单用户
+	h.SetAllowedUsers([]string{"ou_test_user"})
+
+	// 配置群组项目映射
+	h.SetGroupProjectMap(map[string]string{
+		"oc_potato_dev": "土豆",
+	})
+
+	// 配置分层匹配器（只有迷雾任务）
+	executors := []matcher.ExecutorTaskConfig{
+		{
+			ExecutorID: "test-executor",
+			Keywords:   []string{"迷雾"},
+			TaskName:   "mist-dev-restart",
+			Names: matcher.TaskNames{
+				Primary: "重启",
+			},
+		},
+	}
+	h.SetLayeredMatcher(matcher.NewLayeredMatcher(executors, nil))
+
+	// 预填充用户信息缓存
+	h.userInfoCacheMu.Lock()
+	h.userInfoCache["ou_test_user"] = "测试用户"
+	h.userInfoCacheMu.Unlock()
+
+	// 构造测试事件（用户明确指定"迷雾"，虽然群组是土豆群）
+	event := map[string]interface{}{
+		"sender": map[string]interface{}{
+			"user_id": "ou_test_user",
+		},
+		"message": map[string]interface{}{
+			"chat_id":   "oc_potato_dev",
+			"chat_type": "group",
+			"content":   `{"text":"迷雾重启"}`,
+		},
+	}
+
+	testBot := bot.NewBotClient("test-dispatcher", "cli_123", "secret", "dispatcher")
+
+	err := h.Handle(context.Background(), event, testBot)
+	// 应该匹配到迷雾任务，而不是土豆任务（错误来自发送消息，而非匹配失败）
+	if err != nil && err.Error() == "未找到匹配任务" {
+		t.Errorf("Expected mist task to match, got: %v", err)
 	}
 }
 

@@ -146,10 +146,25 @@ func (h *DispatcherHandler) handleLayeredMode(ctx context.Context, event interfa
 
 	// 单个匹配，执行
 	match := result.Matches[0]
-	cmd := BuildTaskCommand(match.TaskName)
-	msgToSend := cmd.String()
 
-	fmt.Printf("📤 [%s] 分发任务 (分层匹配): %s → %s\n", botClient.Name, message, msgToSend)
+	// 获取发布者信息
+	requester, err := h.getUserInfo(ctx, botClient, senderID)
+	if err != nil {
+		replyMsg := "❌ 获取用户信息失败，请稍后重试"
+		if replyErr := h.replyToUser(event, replyMsg, botClient); replyErr != nil {
+			return fmt.Errorf("获取用户信息失败且回复失败: %w (回复错误: %v)", err, replyErr)
+		}
+		return fmt.Errorf("获取用户信息失败: %w", err)
+	}
+
+	// 构建 JSON 格式的任务命令
+	cmd := &TaskCommand{
+		TaskName:  match.TaskName,
+		Requester: requester,
+	}
+	msgToSend := cmd.JSON()
+
+	fmt.Printf("📤 [%s] 分发任务 (分层匹配): %s → %s (发布者: %s)\n", botClient.Name, message, msgToSend, requester)
 
 	if err := h.SendToGroup(msgToSend, botClient); err != nil {
 		return fmt.Errorf("分发任务失败: %w", err)

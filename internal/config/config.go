@@ -17,8 +17,11 @@ var (
 
 // TaskDetail 任务详细配置
 type TaskDetail struct {
-	Script string   `yaml:"script"`   // 脚本路径
-	Params []string `yaml:"params"`   // 参数列表
+	DisplayName string   `yaml:"display_name,omitempty"` // 任务显示名称
+	Keywords    []string `yaml:"keywords,omitempty"`     // 关键词列表（用于语义匹配）
+	Names       []string `yaml:"names,omitempty"`        // 操作名候选列表
+	Script      string   `yaml:"script"`                 // 脚本路径
+	Params      []string `yaml:"params,omitempty"`       // 参数列表
 }
 
 // ExecutorTask 定义执行机器人的单个任务配置

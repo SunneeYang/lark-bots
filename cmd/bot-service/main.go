@@ -633,23 +633,24 @@ func buildExecutorConfigs(cfg *config.ServiceConfig) []matcher.ExecutorTaskConfi
 
 	for _, botCfg := range cfg.Bots {
 		if botCfg.Role == "executor" {
-			// 旧格式：LegacyTasks 配置（分层匹配）
-			for _, task := range botCfg.LegacyTasks {
-				if len(task.Names) == 0 {
-					continue // 跳过没有 names 的任务
+			// 新格式：Tasks 配置（参数化任务，包含语义匹配信息）
+			for taskName, taskDetail := range botCfg.Tasks {
+				// 跳过没有 names 的任务（需要用于精确匹配）
+				if len(taskDetail.Names) == 0 {
+					continue
 				}
 				configs = append(configs, matcher.ExecutorTaskConfig{
 					ExecutorID:      botCfg.AppID,
 					ExecutorName:    botCfg.Name,
 					Description:     botCfg.Description,
 					RoutingKeywords: botCfg.RoutingKeywords,
-					Keywords:        task.Keywords,
-					TaskName:        task.Name,
-					DisplayName:     task.DisplayName,
-					Script:          task.Script,
+					Keywords:        taskDetail.Keywords,
+					TaskName:        taskName,
+					DisplayName:     taskDetail.DisplayName,
+					Script:          taskDetail.Script,
 					Names: matcher.TaskNames{
-						Primary: task.Names[0], // 主操作名
-						Aliases: task.Names,    // 所有名称（含主名）
+						Primary: taskDetail.Names[0], // 主操作名
+						Aliases: taskDetail.Names,    // 所有名称（含主名）
 					},
 				})
 			}
