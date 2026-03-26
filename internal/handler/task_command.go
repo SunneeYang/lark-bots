@@ -7,8 +7,10 @@ import (
 
 // TaskCommand 任务命令结构（Dispatcher → Executor 通信格式）
 // 格式: task:potato-dev-restart（只发送唯一任务名称）
+// 将迁移到 JSON 格式以支持更多元数据（如发布者信息）
 type TaskCommand struct {
-	TaskName string // 唯一任务名称（全局唯一）
+	TaskName  string // 唯一任务名称（全局唯一）
+	Requester string // 发布者姓名（谁发起的任务）
 }
 
 // BuildTaskCommand 构建任务命令（只包含任务名）
