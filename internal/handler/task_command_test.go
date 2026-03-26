@@ -231,3 +231,179 @@ func TestTaskCommand_JSON_Example(t *testing.T) {
 		t.Error("JSON should contain 'requester' key")
 	}
 }
+
+// TestParseTaskCommandJSON 测试从 JSON 字符串解析任务命令
+func TestParseTaskCommandJSON(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		wantTask     string
+		wantRequester string
+		wantErr      bool
+		errContains  string
+	}{
+		{
+			name:          "标准JSON格式",
+			input:         `{"task":"potato-dev-restart","requester":"张三"}`,
+			wantTask:      "potato-dev-restart",
+			wantRequester: "张三",
+			wantErr:       false,
+		},
+		{
+			name:          "英文名发布者",
+			input:         `{"task":"mist-test-update","requester":"John Doe"}`,
+			wantTask:      "mist-test-update",
+			wantRequester: "John Doe",
+			wantErr:       false,
+		},
+		{
+			name:          "空发布者",
+			input:         `{"task":"miwu-deploy","requester":""}`,
+			wantTask:      "miwu-deploy",
+			wantRequester: "",
+			wantErr:       false,
+		},
+		{
+			name:         "无效的JSON",
+			input:        `{invalid json}`,
+			wantErr:      true,
+			errContains:  "JSON 解析失败",
+		},
+		{
+			name:         "缺少task字段",
+			input:        `{"requester":"张三"}`,
+			wantErr:      true,
+			errContains:  "缺少或无效的 task 字段",
+		},
+		{
+			name:         "缺少requester字段",
+			input:        `{"task":"potato-dev-restart"}`,
+			wantErr:      true,
+			errContains:  "缺少或无效的 requester 字段",
+		},
+		{
+			name:         "task字段为空字符串",
+			input:        `{"task":"","requester":"张三"}`,
+			wantErr:      true,
+			errContains:  "缺少或无效的 task 字段",
+		},
+		{
+			name:         "task字段类型错误",
+			input:        `{"task":123,"requester":"张三"}`,
+			wantErr:      true,
+			errContains:  "缺少或无效的 task 字段",
+		},
+		{
+			name:         "requester字段类型错误",
+			input:        `{"task":"potato-dev-restart","requester":456}`,
+			wantErr:      true,
+			errContains:  "缺少或无效的 requester 字段",
+		},
+		{
+			name:         "空JSON对象",
+			input:        `{}`,
+			wantErr:      true,
+			errContains:  "缺少或无效的 task 字段",
+		},
+		{
+			name:         "空字符串",
+			input:        ``,
+			wantErr:      true,
+			errContains:  "JSON 解析失败",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseTaskCommandJSON(tt.input)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseTaskCommandJSON() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if tt.wantErr {
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("Error message = %v, want包含 %v", err.Error(), tt.errContains)
+				}
+				return
+			}
+
+			if got.TaskName != tt.wantTask {
+				t.Errorf("TaskName = %v, want %v", got.TaskName, tt.wantTask)
+			}
+
+			if got.Requester != tt.wantRequester {
+				t.Errorf("Requester = %v, want %v", got.Requester, tt.wantRequester)
+			}
+		})
+	}
+}
+
+// TestParseTaskCommandJSON_RoundTrip 测试 JSON 序列化与反序列化的往返
+func TestParseTaskCommandJSON_RoundTrip(t *testing.T) {
+	original := &TaskCommand{
+		TaskName:  "potato-dev-restart",
+		Requester: "李四",
+	}
+
+	// 序列化
+	jsonStr := original.JSON()
+
+	// 反序列化
+	parsed, err := ParseTaskCommandJSON(jsonStr)
+	if err != nil {
+		t.Fatalf("ParseTaskCommandJSON() error = %v", err)
+	}
+
+	// 验证
+	if parsed.TaskName != original.TaskName {
+		t.Errorf("TaskName = %v, want %v", parsed.TaskName, original.TaskName)
+	}
+
+	if parsed.Requester != original.Requester {
+		t.Errorf("Requester = %v, want %v", parsed.Requester, original.Requester)
+	}
+}
+
+// TestParseTaskCommandJSON_Whitespace 测试 JSON 格式中的空白字符处理
+func TestParseTaskCommandJSON_Whitespace(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "标准格式",
+			input: `{"task":"test-task","requester":"user"}`,
+		},
+		{
+			name:  "带空格",
+			input: `{ "task" : "test-task" , "requester" : "user" }`,
+		},
+		{
+			name:  "带换行",
+			input: `{
+				"task": "test-task",
+				"requester": "user"
+			}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseTaskCommandJSON(tt.input)
+			if err != nil {
+				t.Fatalf("ParseTaskCommandJSON() error = %v", err)
+			}
+
+			if got.TaskName != "test-task" {
+				t.Errorf("TaskName = %v, want test-task", got.TaskName)
+			}
+
+			if got.Requester != "user" {
+				t.Errorf("Requester = %v, want user", got.Requester)
+			}
+		})
+	}
+}
+

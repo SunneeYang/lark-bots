@@ -57,3 +57,26 @@ func ParseTaskCommand(input string) (*TaskCommand, error) {
 		TaskName: taskName,
 	}, nil
 }
+
+// ParseTaskCommandJSON 从 JSON 字符串解析任务命令
+func ParseTaskCommandJSON(input string) (*TaskCommand, error) {
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(input), &data); err != nil {
+		return nil, fmt.Errorf("JSON 解析失败: %w", err)
+	}
+
+	taskName, ok := data["task"].(string)
+	if !ok || taskName == "" {
+		return nil, fmt.Errorf("缺少或无效的 task 字段")
+	}
+
+	requester, ok := data["requester"].(string)
+	if !ok {
+		return nil, fmt.Errorf("缺少或无效的 requester 字段")
+	}
+
+	return &TaskCommand{
+		TaskName:  taskName,
+		Requester: requester,
+	}, nil
+}
