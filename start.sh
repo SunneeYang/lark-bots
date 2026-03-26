@@ -56,10 +56,11 @@ fi
 
 # Function to find and display running bot-service processes
 check_running_services() {
-    local pids=$(pgrep -f "bot-service" 2>/dev/null | grep -v "bot-service-" | sort)
+    # Use pgrep with exact match on process name
+    local pids=$(pgrep -x "bot-service" 2>/dev/null | sort)
 
     if [[ -n "$pids" ]]; then
-        echo "⚠️  Found ${#pids[@]} bot-service process(es) already running:"
+        echo "⚠️  Found $(echo "$pids" | wc -l) bot-service process(es) already running:"
         echo ""
         for pid in $pids; do
             local cmd=$(ps -p "$pid" -o command= 2>/dev/null | head -c 100)

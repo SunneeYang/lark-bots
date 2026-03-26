@@ -5,7 +5,7 @@ PID_FILE="bot-service.pid"
 
 # Function to find bot-service processes
 find_bot_processes() {
-    pgrep -f "bot-service" | grep -v "bot-service-" | sort
+    pgrep -x "bot-service" 2>/dev/null | sort
 }
 
 # Function to get process command line
