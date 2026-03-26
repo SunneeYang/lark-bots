@@ -478,3 +478,58 @@ func TestGroupProjectMap(t *testing.T) {
 		})
 	}
 }
+
+// ===== getUserInfo 测试 =====
+
+func TestDispatcherHandler_GetUserInfo_CacheHit(t *testing.T) {
+	h := NewDispatcherHandler(nil)
+	ctx := context.Background()
+	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
+
+	// 预先填充缓存
+	h.userInfoCacheMu.Lock()
+	h.userInfoCache["ou_123"] = "张三"
+	h.userInfoCacheMu.Unlock()
+
+	// 调用 getUserInfo，应该从缓存返回
+	name, err := h.getUserInfo(ctx, testBot, "ou_123")
+	if err != nil {
+		t.Fatalf("getUserInfo() error = %v", err)
+	}
+
+	if name != "张三" {
+		t.Errorf("getUserInfo() = %v, want %v", name, "张三")
+	}
+}
+
+func TestDispatcherHandler_GetUserInfo_ConcurrentAccess(t *testing.T) {
+	h := NewDispatcherHandler(nil)
+	ctx := context.Background()
+	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
+
+	// 预先填充缓存
+	h.userInfoCacheMu.Lock()
+	h.userInfoCache["ou_789"] = "王五"
+	h.userInfoCacheMu.Unlock()
+
+	// 并发读取
+	done := make(chan bool)
+	for i := 0; i < 10; i++ {
+		go func() {
+			name, err := h.getUserInfo(ctx, testBot, "ou_789")
+			if err != nil {
+				t.Errorf("getUserInfo() error = %v", err)
+			}
+			if name != "王五" {
+				t.Errorf("getUserInfo() = %v, want %v", name, "王五")
+			}
+			done <- true
+		}()
+	}
+
+	// 等待所有 goroutine 完成
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+}
+

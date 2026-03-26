@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	larkcontact "github.com/larksuite/oapi-sdk-go/v3/service/contact/v3"
 	"github.com/SunneeYang/lark-bots/internal/bot"
 	"github.com/SunneeYang/lark-bots/internal/common"
 	"github.com/SunneeYang/lark-bots/internal/handler/matcher"
@@ -102,7 +103,7 @@ func (h *DispatcherHandler) Handle(ctx context.Context, event interface{}, botCl
 
 	// 根据是否配置了分层匹配器决定使用哪种模式
 	if h.layeredMatcher != nil {
-		return h.handleLayeredMode(ctx, event, message, chatType, botClient)
+		return h.handleLayeredMode(ctx, event, message, senderID, botClient)
 	}
 	return h.handleLegacyMode(ctx, event, message, chatType, botClient)
 }
@@ -110,7 +111,7 @@ func (h *DispatcherHandler) Handle(ctx context.Context, event interface{}, botCl
 // ===== 新分层匹配模式 =====
 
 // handleLayeredMode 使用分层匹配器处理消息
-func (h *DispatcherHandler) handleLayeredMode(ctx context.Context, event interface{}, message, _ string, botClient *bot.BotClient) error {
+func (h *DispatcherHandler) handleLayeredMode(ctx context.Context, event interface{}, message, senderID string, botClient *bot.BotClient) error {
 	// 自动补充群组的项目关键词
 	enhancedMessage := h.enhanceMessageWithGroupProject(ctx, event, message)
 
@@ -301,4 +302,45 @@ func (h *DispatcherHandler) enhanceMessageWithGroupProject(_ context.Context, ev
 		chatID, projectName, message, enhanced)
 
 	return enhanced
+}
+
+// getUserInfo 获取用户真实姓名（带缓存）
+// 1. 检查缓存，如果存在直接返回
+// 2. 调用飞书 API 获取用户信息
+// 3. 存入缓存并返回
+func (h *DispatcherHandler) getUserInfo(ctx context.Context, botClient *bot.BotClient, openID string) (string, error) {
+	// 1. 检查缓存（使用读锁）
+	h.userInfoCacheMu.RLock()
+	if name, exists := h.userInfoCache[openID]; exists {
+		h.userInfoCacheMu.RUnlock()
+		return name, nil
+	}
+	h.userInfoCacheMu.RUnlock()
+
+	// 2. 调用飞书 Contact API 获取用户信息
+	// 使用 contact v3 API，支持 tenant access token（机器人可用）
+	userInfo, err := botClient.LarkClient.Contact.User.Get(ctx, larkcontact.NewGetUserReqBuilder().
+		UserId(openID).
+		UserIdType("open_id").
+		Build())
+	if err != nil {
+		return "", fmt.Errorf("获取用户信息失败: %w", err)
+	}
+
+	if !userInfo.Success() {
+		return "", fmt.Errorf("获取用户信息失败: code=%d, msg=%s", userInfo.Code, userInfo.Msg)
+	}
+
+	// 3. 提取真实姓名
+	if userInfo.Data == nil || userInfo.Data.User == nil || userInfo.Data.User.Name == nil {
+		return "", fmt.Errorf("用户信息响应缺少姓名字段")
+	}
+	realName := *userInfo.Data.User.Name
+
+	// 4. 存入缓存（使用写锁）
+	h.userInfoCacheMu.Lock()
+	h.userInfoCache[openID] = realName
+	h.userInfoCacheMu.Unlock()
+
+	return realName, nil
 }
