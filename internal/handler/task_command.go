@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -24,6 +25,16 @@ func BuildTaskCommand(taskName string) *TaskCommand {
 func (c *TaskCommand) String() string {
 	// 格式: task:potato-dev-restart
 	return fmt.Sprintf("task:%s", c.TaskName)
+}
+
+// JSON 序列化为 JSON 格式
+func (c *TaskCommand) JSON() string {
+	data := map[string]interface{}{
+		"task":      c.TaskName,
+		"requester": c.Requester,
+	}
+	bytes, _ := json.Marshal(data)
+	return string(bytes)
 }
 
 // ParseTaskCommand 从字符串解析任务命令
