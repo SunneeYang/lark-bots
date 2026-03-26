@@ -15,6 +15,12 @@ var (
 	ErrInvalidYAML    = errors.New("invalid YAML format")
 )
 
+// TaskDetail 任务详细配置
+type TaskDetail struct {
+	Script string   `yaml:"script"`   // 脚本路径
+	Params []string `yaml:"params"`   // 参数列表
+}
+
 // ExecutorTask 定义执行机器人的单个任务配置
 type ExecutorTask struct {
 	// Name 唯一任务名称（全局唯一，用于 dispatcher 发送和 executor 认领）
@@ -48,7 +54,8 @@ type BotConfig struct {
 	AllowedDispatchers []string          `yaml:"allowed_dispatchers,omitempty"` // 允许的 dispatcher app_id 列表
 	RoutingKeywords    []string          `yaml:"routing_keywords,omitempty"`    // Executor 路由关键词（粗粒度模糊匹配）
 	Description        string            `yaml:"description,omitempty"`          // Executor 描述（用于日志输出）
-	Tasks              []ExecutorTask    `yaml:"tasks,omitempty"`               // 任务列表（支持分层匹配）
+	LegacyTasks        []ExecutorTask    `yaml:"legacy_tasks,omitempty"`        // 旧格式任务列表（待迁移，将被 Tasks 字段替代）
+	Tasks              map[string]TaskDetail `yaml:"tasks,omitempty"`           // 任务详细配置（参数化任务，新格式）
 	TaskScripts        map[string]string `yaml:"task_scripts,omitempty"`        // 旧版任务映射（兼容exact模式）
 	PollInterval       string            `yaml:"poll_interval,omitempty"`      // 轮询间隔（如 "1s", "500ms"，默认 "1s"）
 	MaxTasks           int               `yaml:"max_tasks,omitempty"`          // 最大并发任务数，0 或负数表示不限制，默认 0

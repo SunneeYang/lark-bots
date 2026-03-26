@@ -183,3 +183,96 @@ func TestLoadConfig_EmptyFile(t *testing.T) {
 		t.Error("Expected error for empty file, got nil")
 	}
 }
+
+func TestBotConfig_TaskDetails(t *testing.T) {
+	yamlData := `
+name: "test-executor"
+app_id: "cli_123"
+app_secret: "secret"
+role: "executor"
+allowed_dispatchers:
+  - "cli_456"
+tasks:
+  miwu-dev-restart:
+    script: "/opt/scripts/build.sh"
+    params: ["dev", "zh"]
+  potato-prod-deploy:
+    script: "/opt/scripts/deploy.sh"
+    params: ["prod", "us"]
+  check-logs:
+    script: "/opt/scripts/check_logs.sh"
+    params: []
+`
+
+	var cfg BotConfig
+	err := yaml.Unmarshal([]byte(yamlData), &cfg)
+
+	if err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	// Verify basic fields
+	if cfg.Name != "test-executor" {
+		t.Errorf("Expected Name 'test-executor', got '%s'", cfg.Name)
+	}
+
+	if cfg.Role != "executor" {
+		t.Errorf("Expected Role 'executor', got '%s'", cfg.Role)
+	}
+
+	// Verify Tasks field
+	if cfg.Tasks == nil {
+		t.Fatal("Tasks should not be nil")
+	}
+
+	if len(cfg.Tasks) != 3 {
+		t.Errorf("Expected 3 task details, got %d", len(cfg.Tasks))
+	}
+
+	// Verify first task
+	task1, ok := cfg.Tasks["miwu-dev-restart"]
+	if !ok {
+		t.Error("Task 'miwu-dev-restart' not found in Tasks")
+	} else {
+		if task1.Script != "/opt/scripts/build.sh" {
+			t.Errorf("Expected script '/opt/scripts/build.sh', got '%s'", task1.Script)
+		}
+		if len(task1.Params) != 2 {
+			t.Errorf("Expected 2 params, got %d", len(task1.Params))
+		} else {
+			if task1.Params[0] != "dev" || task1.Params[1] != "zh" {
+				t.Errorf("Expected params ['dev', 'zh'], got %v", task1.Params)
+			}
+		}
+	}
+
+	// Verify second task
+	task2, ok := cfg.Tasks["potato-prod-deploy"]
+	if !ok {
+		t.Error("Task 'potato-prod-deploy' not found in Tasks")
+	} else {
+		if task2.Script != "/opt/scripts/deploy.sh" {
+			t.Errorf("Expected script '/opt/scripts/deploy.sh', got '%s'", task2.Script)
+		}
+		if len(task2.Params) != 2 {
+			t.Errorf("Expected 2 params, got %d", len(task2.Params))
+		} else {
+			if task2.Params[0] != "prod" || task2.Params[1] != "us" {
+				t.Errorf("Expected params ['prod', 'us'], got %v", task2.Params)
+			}
+		}
+	}
+
+	// Verify third task with empty params
+	task3, ok := cfg.Tasks["check-logs"]
+	if !ok {
+		t.Error("Task 'check-logs' not found in Tasks")
+	} else {
+		if task3.Script != "/opt/scripts/check_logs.sh" {
+			t.Errorf("Expected script '/opt/scripts/check_logs.sh', got '%s'", task3.Script)
+		}
+		if len(task3.Params) != 0 {
+			t.Errorf("Expected 0 params, got %d", len(task3.Params))
+		}
+	}
+}

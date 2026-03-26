@@ -268,10 +268,8 @@ func runStart(cmd *cobra.Command, args []string) {
 
 			// 构建任务名称到脚本的映射（新格式）
 			taskNameToScript := make(map[string]string)
-			for _, task := range botCfg.Tasks {
-				if task.Name != "" {
-					taskNameToScript[task.Name] = task.Script
-				}
+			for taskName, taskDetail := range botCfg.Tasks {
+				taskNameToScript[taskName] = taskDetail.Script
 			}
 
 			// 创建轮询器
@@ -635,8 +633,8 @@ func buildExecutorConfigs(cfg *config.ServiceConfig) []matcher.ExecutorTaskConfi
 
 	for _, botCfg := range cfg.Bots {
 		if botCfg.Role == "executor" {
-			// 新格式：tasks 配置
-			for _, task := range botCfg.Tasks {
+			// 旧格式：LegacyTasks 配置（分层匹配）
+			for _, task := range botCfg.LegacyTasks {
 				if len(task.Names) == 0 {
 					continue // 跳过没有 names 的任务
 				}

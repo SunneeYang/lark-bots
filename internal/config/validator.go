@@ -66,7 +66,8 @@ func ValidateConfig(cfg *ServiceConfig) error {
 
 	// 检查所有 executor 的任务名唯一性（兼容新旧两种配置格式）
 	// 旧格式: TaskScripts map[string]string → 任务名即为 key
-	// 新格式: Tasks []ExecutorTask → 任务名取 Task.Name
+	// 旧格式: LegacyTasks []ExecutorTask → 任务名取 Task.Name
+	// 新格式: Tasks map[string]TaskDetail → 任务名即为 map key
 	taskNames := make(map[string]string) // taskName -> executorName
 	for _, bot := range cfg.Bots {
 		if bot.Role == "executor" {
@@ -78,28 +79,41 @@ func ValidateConfig(cfg *ServiceConfig) error {
 				}
 				taskNames[taskName] = bot.Name
 			}
-			// 新格式 Tasks
-			for _, task := range bot.Tasks {
+			// 旧格式 LegacyTasks (分层匹配)
+			for _, task := range bot.LegacyTasks {
 				if len(task.Names) == 0 {
 					return fmt.Errorf("配置错误：executor '%s' 的任务缺少 names 配置", bot.Name)
 				}
 				if task.Name == "" {
 					return fmt.Errorf("配置错误：executor '%s' 的任务缺少 name 配置", bot.Name)
 				}
-				taskName := task.Name // 任务名称（新格式使用 Name 字段）
+				taskName := task.Name // 任务名称
 				if existingExecutor, exists := taskNames[taskName]; exists {
 					return fmt.Errorf("配置错误：任务名 '%s' 被多个 executor 声明（%s 和 %s），任务名必须全局唯一",
 						taskName, existingExecutor, bot.Name)
 				}
 				taskNames[taskName] = bot.Name
 			}
-			// 检查 Tasks 中 keywords 不能为空
-			for _, task := range bot.Tasks {
+			// 检查 LegacyTasks 中 keywords 不能为空
+			for _, task := range bot.LegacyTasks {
 				if len(task.Keywords) == 0 {
 					return fmt.Errorf("配置错误：executor '%s' 的任务缺少 keywords 配置", bot.Name)
 				}
 				if task.Script == "" {
 					return fmt.Errorf("配置错误：executor '%s' 的任务缺少 script 配置", bot.Name)
+				}
+			}
+			// 新格式 Tasks (参数化任务)
+			for taskName := range bot.Tasks {
+				if existingExecutor, exists := taskNames[taskName]; exists {
+					return fmt.Errorf("配置错误：任务名 '%s' 被多个 executor 声明（%s 和 %s），任务名必须全局唯一",
+						taskName, existingExecutor, bot.Name)
+				}
+				taskNames[taskName] = bot.Name
+				// 验证 TaskDetail 必填字段
+				taskDetail := bot.Tasks[taskName]
+				if taskDetail.Script == "" {
+					return fmt.Errorf("配置错误：executor '%s' 的任务 '%s' 缺少 script 配置", bot.Name, taskName)
 				}
 			}
 		}
