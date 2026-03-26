@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/SunneeYang/lark-bots/internal/bot"
 	"github.com/SunneeYang/lark-bots/internal/common"
@@ -28,6 +29,8 @@ type DispatcherHandler struct {
 	taskWhiteList   map[string]bool       // 旧模式：任务名白名单
 	layeredMatcher  *matcher.LayeredMatcher // 新模式：分层匹配器
 	groupProjectMap map[string]string      // 群组 ID 到项目名的映射（自动补充项目关键词）
+	userInfoCache   map[string]string      // OpenID → 真实姓名缓存
+	userInfoCacheMu sync.RWMutex           // 保护 userInfoCache 的读写锁
 }
 
 // NewDispatcherHandler 创建分发机器人处理器
@@ -36,7 +39,8 @@ func NewDispatcherHandler(semanticCfg *SemanticMatchConfig) *DispatcherHandler {
 	return &DispatcherHandler{
 		BaseHandler:    NewBaseHandler(),
 		userWhiteList:  make(map[string]bool),
-		taskWhiteList: make(map[string]bool),
+		taskWhiteList:  make(map[string]bool),
+		userInfoCache:  make(map[string]string), // 初始化用户信息缓存
 	}
 }
 
