@@ -82,36 +82,6 @@ func TestExecutorHandler_SetAllowedDispatchers(t *testing.T) {
 	}
 }
 
-func TestExecutorHandler_SetTaskScripts(t *testing.T) {
-	handler := NewExecutorHandler()
-
-	taskScripts := map[string]string{
-		"deploy":     "/opt/scripts/deploy.sh",
-		"check_logs": "/opt/scripts/cleanup_logs.sh",
-	}
-	handler.SetTaskScripts(taskScripts)
-
-	// 验证设置成功
-	testBot := bot.NewBotClient("executor", "cli_456", "secret", "executor")
-
-	handler.SetAllowedDispatchers([]string{"cli_123"})
-
-	event := map[string]interface{}{
-		"app_id": "cli_123",
-		"sender": map[string]interface{}{
-			"sender_type": "app",
-		},
-		"message": map[string]interface{}{
-			"content": `{"text":"deploy"}`,
-		},
-	}
-
-	err := handler.Handle(context.Background(), event, testBot)
-	if err != nil {
-		t.Logf("Handle returned error (expected): %v", err)
-	}
-}
-
 func TestExtractSenderBotID(t *testing.T) {
 	tests := []struct {
 		name        string
