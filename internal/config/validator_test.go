@@ -13,7 +13,6 @@ func TestValidateConfig_Valid(t *testing.T) {
 				AppID:          "cli_123",
 				AppSecret:      "secret",
 				Role:           "dispatcher",
-				AllowedUsers:   []string{"user_1"},
 				TaskScripts:    map[string]string{"deploy": "/opt/scripts/deploy.sh"},
 			},
 			{

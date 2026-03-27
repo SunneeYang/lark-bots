@@ -54,8 +54,6 @@ bots:
     allowed_tasks:
       - "deploy"
       - "restart"
-    allowed_users:
-      - "user_1"
 robot_group_id: "oc_xxx"
 `
 
@@ -73,10 +71,6 @@ robot_group_id: "oc_xxx"
 	if cfg.RobotGroupID != "oc_xxx" {
 		t.Errorf("Expected RobotGroupID 'oc_xxx', got '%s'", cfg.RobotGroupID)
 	}
-
-	if len(cfg.Bots[0].AllowedUsers) != 1 {
-		t.Errorf("Expected 1 allowed user, got %d", len(cfg.Bots[0].AllowedUsers))
-	}
 }
 
 func TestLoadConfig_Success(t *testing.T) {
@@ -90,8 +84,6 @@ bots:
     app_id: "cli_123"
     app_secret: "secret"
     role: "dispatcher"
-    allowed_users:
-      - "user_1"
   - name: "executor"
     app_id: "cli_456"
     app_secret: "secret2"

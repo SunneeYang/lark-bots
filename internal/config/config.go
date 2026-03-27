@@ -17,11 +17,12 @@ var (
 
 // TaskDetail 任务详细配置
 type TaskDetail struct {
-	DisplayName string   `yaml:"display_name,omitempty"` // 任务显示名称
-	Keywords    []string `yaml:"keywords,omitempty"`     // 关键词列表（用于语义匹配）
-	Names       []string `yaml:"names,omitempty"`        // 操作名候选列表
-	Script      string   `yaml:"script"`                 // 脚本路径
-	Params      []string `yaml:"params,omitempty"`       // 参数列表
+	DisplayName  string   `yaml:"display_name,omitempty"` // 任务显示名称
+	Keywords     []string `yaml:"keywords,omitempty"`     // 关键词列表（用于语义匹配）
+	Names        []string `yaml:"names,omitempty"`        // 操作名候选列表
+	Script       string   `yaml:"script"`                 // 脚本路径
+	Params       []string `yaml:"params,omitempty"`       // 参数列表
+	AllowedUsers []string `yaml:"allowed_users,omitempty"` // 允许的用户列表
 }
 
 // ExecutorTask 定义执行机器人的单个任务配置
@@ -50,7 +51,7 @@ type BotConfig struct {
 	Role      string `yaml:"role"` // "dispatcher" | "executor"
 
 	// Dispatcher 特有配置
-	AllowedUsers    []string          `yaml:"allowed_users,omitempty"` // 允许的用户列表（仅 dispatcher 角色）
+	// AllowedUsers []string `yaml:"allowed_users,omitempty"` // 已移除：用户白名单移到任务级
 	GroupProjectMap map[string]string `yaml:"group_project_map,omitempty"` // 群组 ID 到项目名的映射（仅 dispatcher 角色），如 "oc_xxx": "土豆"
 
 	// Executor 特有配置
