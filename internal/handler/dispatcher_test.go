@@ -4,19 +4,31 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/SunneeYang/lark-bots/internal/bot"
 	"github.com/SunneeYang/lark-bots/internal/common"
+	"github.com/SunneeYang/lark-bots/internal/config"
 	"github.com/SunneeYang/lark-bots/internal/handler/matcher"
 )
 
-func TestDispatcherHandler_HandleUserMessage(t *testing.T) {
-	handler := NewDispatcherHandler(nil)
+// createTestDispatcherHandler 创建用于测试的 dispatcher handler
+func createTestDispatcherHandler() *DispatcherHandler {
+	// 加载测试配置
+	cfg, err := config.LoadConfig("configs/bots.test.yaml")
+	if err != nil {
+		panic("加载测试配置失败: " + err.Error())
+	}
 
-	// 设置白名单
-	handler.SetAllowedUsers([]string{"user_1"})
-	handler.SetAllowedTasks([]string{"deploy.sh", "restart.sh"})
+	// 创建 handler，传入语义配置为 nil（不使用语义匹配）
+	handler := NewDispatcherHandler(cfg, nil)
+	handler.SetRobotGroupID(cfg.RobotGroupID)
+	return handler
+}
+
+func TestDispatcherHandler_HandleUserMessage(t *testing.T) {
+	handler := createTestDispatcherHandler()
 
 	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
 
@@ -37,11 +49,10 @@ func TestDispatcherHandler_HandleUserMessage(t *testing.T) {
 }
 
 func TestDispatcherHandler_UserNotInWhitelist(t *testing.T) {
-	handler := NewDispatcherHandler(nil)
+	handler := createTestDispatcherHandler()
 
 	// 设置白名单，不包含 user_2
-	handler.SetAllowedUsers([]string{"user_1"})
-	handler.SetAllowedTasks([]string{"deploy.sh"})
+		handler.SetAllowedTasks([]string{"deploy.sh"})
 
 	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
 
@@ -61,11 +72,10 @@ func TestDispatcherHandler_UserNotInWhitelist(t *testing.T) {
 }
 
 func TestDispatcherHandler_TaskNotInWhitelist(t *testing.T) {
-	handler := NewDispatcherHandler(nil)
+	handler := createTestDispatcherHandler()
 
 	// 设置白名单，不包含 test.sh
-	handler.SetAllowedUsers([]string{"user_1"})
-	handler.SetAllowedTasks([]string{"deploy.sh"})
+		handler.SetAllowedTasks([]string{"deploy.sh"})
 
 	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
 
@@ -81,33 +91,6 @@ func TestDispatcherHandler_TaskNotInWhitelist(t *testing.T) {
 	err := handler.Handle(context.Background(), event, testBot)
 	if err == nil {
 		t.Error("Expected error for task not in whitelist, got nil")
-	}
-}
-
-func TestDispatcherHandler_SetAllowedUsers(t *testing.T) {
-	handler := NewDispatcherHandler(nil)
-
-	users := []string{"user_1", "user_2"}
-	handler.SetAllowedUsers(users)
-
-	// 验证白名单已设置
-	// 由于 userWhiteList 是私有字段，我们通过 Handle 方法间接验证
-	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
-
-	// 测试用户在白名单中
-	event := map[string]interface{}{
-		"sender": map[string]interface{}{
-			"user_id": "user_1",
-		},
-		"message": map[string]interface{}{
-			"content": "deploy.sh",
-		},
-	}
-
-	err := handler.Handle(context.Background(), event, testBot)
-	// 不应该报错用户不在白名单
-	if err != nil && err.Error() == "用户不在白名单中: user_1" {
-		t.Error("Expected user_1 to be in whitelist")
 	}
 }
 
@@ -542,8 +525,7 @@ func TestDispatcherHandler_HandleLayeredMode_Integration(t *testing.T) {
 	h := NewDispatcherHandler(nil)
 
 	// 1. 配置白名单用户
-	h.SetAllowedUsers([]string{"ou_test_user"})
-
+	
 	// 2. 配置群组项目映射
 	h.SetGroupProjectMap(map[string]string{
 		"oc_potato_dev": "土豆",
@@ -616,8 +598,7 @@ func TestDispatcherHandler_HandleLayeredMode_NoMatch(t *testing.T) {
 	h := NewDispatcherHandler(nil)
 
 	// 配置白名单用户
-	h.SetAllowedUsers([]string{"ou_test_user"})
-
+	
 	// 配置分层匹配器（只有土豆任务，且只配置重启操作）
 	executors := []matcher.ExecutorTaskConfig{
 		{
@@ -671,8 +652,7 @@ func TestDispatcherHandler_HandleLayeredMode_Negation(t *testing.T) {
 	h := NewDispatcherHandler(nil)
 
 	// 配置白名单用户
-	h.SetAllowedUsers([]string{"ou_test_user"})
-
+	
 	// 配置分层匹配器
 	executors := []matcher.ExecutorTaskConfig{
 		{
@@ -725,8 +705,7 @@ func TestDispatcherHandler_HandleLayeredMode_GroupProjectEnhancement(t *testing.
 	h := NewDispatcherHandler(nil)
 
 	// 配置白名单用户
-	h.SetAllowedUsers([]string{"ou_test_user"})
-
+	
 	// 配置群组项目映射
 	h.SetGroupProjectMap(map[string]string{
 		"oc_potato_dev": "土豆",
@@ -776,8 +755,7 @@ func TestDispatcherHandler_HandleLayeredMode_UserSpecifiedProject(t *testing.T) 
 	h := NewDispatcherHandler(nil)
 
 	// 配置白名单用户
-	h.SetAllowedUsers([]string{"ou_test_user"})
-
+	
 	// 配置群组项目映射
 	h.SetGroupProjectMap(map[string]string{
 		"oc_potato_dev": "土豆",
@@ -896,5 +874,162 @@ func TestDispatcher_TwoLayerPermissionCheck(t *testing.T) {
 	}
 
 	t.Log("Two-layer permission data structure verified successfully")
+}
+
+// TestDispatcher_TaskPermissionEdgeCases 测试任务权限边界情况
+func TestDispatcher_TaskPermissionEdgeCases(t *testing.T) {
+	// 加载测试配置
+	cfg, err := config.LoadConfig("configs/bots.test.yaml")
+	if err != nil {
+		t.Fatalf("加载测试配置失败: %v", err)
+	}
+
+	// 创建 dispatcher handler
+	handler := NewDispatcherHandler(cfg, nil)
+	handler.SetRobotGroupID(cfg.RobotGroupID)
+
+	// 测试用例
+	testCases := []struct {
+		name         string
+		userID       string
+		message      string
+		expectedErr  string
+		description  string
+	}{
+		{
+			name:        "任务没有allowed_users",
+			userID:      "test_user_001",
+			message:     "回滚",
+			expectedErr: "", // 应该成功
+			description: "任务没有限制allowed_users，应该允许",
+		},
+		{
+			name:        "任务允许用户为空数组",
+			userID:      "test_user_001",
+			message:     "限制操作",
+			expectedErr: "❌ 你没有权限执行任务：限制任务",
+			description: "任务的allowed_users为空数组，应该拒绝",
+		},
+		{
+			name:        "用户不在任务权限中",
+			userID:      "test_user_003",
+			message:     "迷雾重启",
+			expectedErr: "❌ 你没有权限执行任务：迷雾开发服重启",
+			description: "用户不在指定任务的allowed_users中，应该拒绝",
+		},
+		{
+			name:        "用户有权限执行任务",
+			userID:      "test_user_001",
+			message:     "迷雾重启",
+			expectedErr: "", // 应该成功
+			description: "用户在任务的allowed_users中，应该允许",
+		},
+		{
+			name:        "管理员有权限",
+			userID:      "admin_user",
+			message:     "土豆重启",
+			expectedErr: "", // 应该成功
+			description: "管理员在土豆重启任务的allowed_users中，应该允许",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// 构造测试事件
+			event := map[string]interface{}{
+				"sender": map[string]interface{}{
+					"user_id": tc.userID,
+				},
+				"message": map[string]interface{}{
+					"chat_id":   "oc_test_robot_group_001",
+					"chat_type": "group",
+					"content":   `{"text":"` + tc.message + `"}`,
+				},
+			}
+
+			testBot := bot.NewBotClient("test-dispatcher", "cli_test_dispatcher_123", "secret", "dispatcher")
+
+			err := handler.Handle(context.Background(), event, testBot)
+
+			if tc.expectedErr == "" {
+				if err != nil {
+					t.Errorf("%s: 期望成功，但失败: %v (%s)", tc.description, err, tc.name)
+				} else {
+					t.Logf("%s: 成功执行", tc.description)
+				}
+			} else {
+				if err == nil {
+					t.Errorf("%s: 期望失败，但成功", tc.description)
+				} else if err.Error() != tc.expectedErr {
+					t.Errorf("%s: 期望错误 '%s'，但得到 '%s'", tc.description, tc.expectedErr, err.Error())
+				} else {
+					t.Logf("%s: 正确拒绝: %s", tc.description, err.Error())
+				}
+			}
+		})
+	}
+}
+
+// TestDispatcher_PermissionCheckConcurrency 测试权限检查的并发安全性
+func TestDispatcher_PermissionCheckConcurrency(t *testing.T) {
+	// 加载测试配置
+	cfg, err := config.LoadConfig("configs/bots.test.yaml")
+	if err != nil {
+		t.Fatalf("加载测试配置失败: %v", err)
+	}
+
+	// 创建 dispatcher handler
+	handler := NewDispatcherHandler(cfg, nil)
+	handler.SetRobotGroupID(cfg.RobotGroupID)
+
+	const numGoroutines = 10
+	const numRequests = 5
+	var wg sync.WaitGroup
+	errChan := make(chan error, numGoroutines*numRequests)
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(goroutineID int) {
+			defer wg.Done()
+
+			for j := 0; j < numRequests; j++ {
+				userID := fmt.Sprintf("test_user_%d", goroutineID)
+				message := fmt.Sprintf("迷雾重启 %d", j)
+
+				// 构造测试事件
+				event := map[string]interface{}{
+					"sender": map[string]interface{}{
+						"user_id": userID,
+					},
+					"message": map[string]interface{}{
+						"chat_id":   "oc_test_robot_group_001",
+						"chat_type": "group",
+						"content":   `{"text":"` + message + `"}`,
+					},
+				}
+
+				testBot := bot.NewBotClient("test-dispatcher", "cli_test_dispatcher_123", "secret", "dispatcher")
+
+				err := handler.Handle(context.Background(), event, testBot)
+				if err != nil {
+					errChan <- fmt.Errorf("goroutine %d request %d: %v", goroutineID, j, err)
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	var errors []error
+	for err := range errChan {
+		errors = append(errors, err)
+	}
+
+	if len(errors) > 0 {
+		t.Errorf("并发测试出现 %d 个错误: %v", len(errors), errors)
+	} else {
+		t.Logf("并发权限检查测试通过，共 %d 个 goroutine 执行 %d 次请求", numGoroutines, numGoroutines*numRequests)
+	}
 }
 

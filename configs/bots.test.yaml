@@ -48,19 +48,29 @@ bots:
     tasks:
       # 任务 1: 迷雾服务器
       - name: "mist-dev-restart"
+        display_name: "迷雾开发服重启"
         keywords: ["迷雾", "mist"]
         names: ["重启", "重新启动", "restart", "reload"]
         script: "/Users/hortor/Documents/work/lark/test/scripts/mist_dev_restart.sh"
+        allowed_users:
+          - "test_user_001"    # 只有这个用户可以执行
       - name: "mist-dev-update"
+        display_name: "迷雾开发服更新"
         keywords: ["迷雾", "mist"]
         names: ["更新", "升级", "update", "upgrade"]
         script: "/Users/hortor/Documents/work/lark/test/scripts/mist_dev_update.sh"
+        allowed_users:
+          - "test_user_002"    # 只有这个用户可以执行
       # 任务 2: 土豆服务器
       - name: "potato-dev-restart"
+        display_name: "土豆开发服重启"
         keywords: ["土豆", "potato"]
         names: ["重启", "重新启动", "restart", "reload"]
         script: "/Users/hortor/Documents/work/lark/test/scripts/potato_dev_restart.sh"
+        allowed_users:
+          - "admin_user"       # 只有管理员可以执行
       - name: "potato-dev-update"
+        display_name: "土豆开发服更新"
         keywords: ["土豆", "potato"]
         names: ["更新", "升级", "update", "upgrade"]
         script: "/Users/hortor/Documents/work/lark/test/scripts/potato_dev_update.sh"
@@ -98,14 +108,22 @@ bots:
     routing_keywords:
       - "生产"
       - "prod"
-    # 新格式任务
+    # 新格式任务 - 演示各种边界情况
     tasks:
+      # 任务 1: 无 allowed_users (所有有用户权限的用户都可以执行)
       - keywords: ["生产服", "生产"]
         names: ["回滚", "rollback"]
         script: "/Users/hortor/Documents/work/lark/test/scripts/prod_rollback.sh"
-    # 旧格式任务（当 tasks 为空时使用）
-    task_scripts:
-      health_check: "/Users/hortor/Documents/work/lark/test/scripts/health_check.sh"
+      # 任务 2: 空 allowed_users 数组 (没有人可以执行)
+      - name: "restricted-task"
+        display_name: "限制任务"
+        keywords: ["测试", "test"]
+        names: ["限制操作", "restricted"]
+        script: "/Users/hortor/Documents/work/lark/test/scripts/restricted.sh"
+        allowed_users: []
+      # 旧格式任务（当 tasks 为空时使用）
+      task_scripts:
+        health_check: "/Users/hortor/Documents/work/lark/test/scripts/health_check.sh"
 
 # ====================
 # 测试说明
