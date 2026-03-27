@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/SunneeYang/lark-bots/internal/common"
 	"github.com/SunneeYang/lark-bots/internal/config"
 	"github.com/SunneeYang/lark-bots/internal/handler/matcher"
+	"log/slog"
 )
 
 // SemanticMatchConfig 语义匹配配置
@@ -58,7 +58,7 @@ func NewDispatcherHandler(cfg *config.ServiceConfig, semanticCfg *SemanticMatchC
 	}
 
 	if len(globalUsers) == 0 {
-		log.Warn("警告：所有任务都没有配置 allowed_users，任何用户都无法执行任务")
+		slog.Warn("警告：所有任务都没有配置 allowed_users，任何用户都无法执行任务")
 	}
 
 	return &DispatcherHandler{

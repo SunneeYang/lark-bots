@@ -186,7 +186,14 @@ func runStart(cmd *cobra.Command, args []string) {
 	}
 
 	// 创建 dispatcher handler
-	dispatcherHandler := handler.NewDispatcherHandler(nil)
+	var semanticCfg *handler.SemanticMatchConfig
+	if dispatcherCfg != nil && dispatcherCfg.SemanticMatch != nil && dispatcherCfg.SemanticMatch.Enabled {
+		semanticCfg = &handler.SemanticMatchConfig{
+			APIKey: dispatcherCfg.SemanticMatch.APIKey,
+			Model:  dispatcherCfg.SemanticMatch.Model,
+		}
+	}
+	dispatcherHandler := handler.NewDispatcherHandler(cfg, semanticCfg)
 	dispatcherHandler.SetRobotGroupID(cfg.RobotGroupID)
 	globalRouter.RegisterHandler("dispatcher", dispatcherHandler)
 	fmt.Println("   ✅ dispatcher 处理器注册成功")
@@ -214,19 +221,6 @@ func runStart(cmd *cobra.Command, args []string) {
 		}
 		dispatcherHandler.SetAllowedTasks(allTaskNames)
 		fmt.Printf("   ✅ 传统匹配模式已启用，共 %d 个任务\n", len(allTaskNames))
-	}
-
-	// 设置 dispatcher 的用户白名单
-	if dispatcherCfg != nil {
-		fmt.Printf("📋 加载 dispatcher 配置: allowed_users=%v\n", dispatcherCfg.AllowedUsers)
-		dispatcherHandler.SetAllowedUsers(dispatcherCfg.AllowedUsers)
-		// 设置群组项目映射
-		if dispatcherCfg.GroupProjectMap != nil && len(dispatcherCfg.GroupProjectMap) > 0 {
-			dispatcherHandler.SetGroupProjectMap(dispatcherCfg.GroupProjectMap)
-			fmt.Printf("📋 加载群组项目映射配置: %d 个群组\n", len(dispatcherCfg.GroupProjectMap))
-		}
-	} else {
-		fmt.Println("⚠️ 未找到 dispatcher 配置")
 	}
 
 	executorHandlers := make(map[string]*handler.ExecutorHandler)
