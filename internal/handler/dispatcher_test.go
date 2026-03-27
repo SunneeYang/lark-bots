@@ -822,3 +822,79 @@ func TestDispatcherHandler_HandleLayeredMode_UserSpecifiedProject(t *testing.T) 
 	}
 }
 
+// TestDispatcher_TwoLayerPermissionCheck 测试两层权限检查框架
+// 验证数据结构正确构建，但不实际执行完整的消息处理流程
+func TestDispatcher_TwoLayerPermissionCheck(t *testing.T) {
+	// 创建测试配置
+	cfg := &config.ServiceConfig{
+		Bots: []config.BotConfig{
+			{
+				Name:           "dispatcher",
+				AppID:          "cli_123",
+				AppSecret:      "secret",
+				Role:           "dispatcher",
+			},
+			{
+				Name:                "executor",
+				AppID:               "cli_456",
+				AppSecret:           "secret",
+				Role:                "executor",
+				AllowedDispatchers:  []string{"cli_123"},
+				Tasks: map[string]config.TaskDetail{
+					"task1": {
+						Script:       "/opt/scripts/task1.sh",
+						AllowedUsers: []string{"user1", "user2"},
+						DisplayName:  "Task 1",
+					},
+					"task2": {
+						Script:       "/opt/scripts/task2.sh",
+						AllowedUsers: []string{"user3"},
+						DisplayName:  "Task 2",
+					},
+				},
+			},
+		},
+		RobotGroupID: "oc_test",
+	}
+
+	// 使用新的构造函数创建 Dispatcher
+	dispatcher := NewDispatcherHandler(cfg, nil)
+
+	// 验证全局用户白名单（所有允许的用户合并）
+	if !dispatcher.userWhiteList["user1"] {
+		t.Error("Expected user1 to be in global whitelist")
+	}
+	if !dispatcher.userWhiteList["user2"] {
+		t.Error("Expected user2 to be in global whitelist")
+	}
+	if !dispatcher.userWhiteList["user3"] {
+		t.Error("Expected user3 to be in global whitelist")
+	}
+
+	// 验证任务级权限
+	taskPerms := dispatcher.taskUserPermissions
+	if len(taskPerms) != 2 {
+		t.Errorf("Expected 2 task permissions, got %d", len(taskPerms))
+	}
+
+	// 验证任务1的权限
+	if !contains(taskPerms["task1"], "user1") {
+		t.Error("Expected user1 to be allowed for task1")
+	}
+	if !contains(taskPerms["task1"], "user2") {
+		t.Error("Expected user2 to be allowed for task1")
+	}
+
+	// 验证任务2的权限
+	if !contains(taskPerms["task2"], "user3") {
+		t.Error("Expected user3 to be allowed for task2")
+	}
+
+	// 验证不存在的用户不在任务权限中
+	if contains(taskPerms["task1"], "user3") {
+		t.Error("Expected user3 to NOT be allowed for task1")
+	}
+
+	t.Log("Two-layer permission data structure verified successfully")
+}
+
