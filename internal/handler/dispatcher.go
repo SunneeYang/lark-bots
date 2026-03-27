@@ -3,12 +3,14 @@ package handler
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 
 	larkcontact "github.com/larksuite/oapi-sdk-go/v3/service/contact/v3"
 	"github.com/SunneeYang/lark-bots/internal/bot"
 	"github.com/SunneeYang/lark-bots/internal/common"
+	"github.com/SunneeYang/lark-bots/internal/config"
 	"github.com/SunneeYang/lark-bots/internal/handler/matcher"
 )
 
@@ -37,12 +39,34 @@ type DispatcherHandler struct {
 
 // NewDispatcherHandler 创建分发机器人处理器
 // semanticCfg 用于旧模式精确匹配 + 语义匹配
-func NewDispatcherHandler(semanticCfg *SemanticMatchConfig) *DispatcherHandler {
+func NewDispatcherHandler(cfg *config.ServiceConfig, semanticCfg *SemanticMatchConfig) *DispatcherHandler {
+	// 收集所有 executor 任务的权限信息
+	globalUsers := make(map[string]bool)
+	taskPerms := make(map[string][]string)
+
+	for _, bot := range cfg.Bots {
+		if bot.Role == "executor" {
+			for taskName, task := range bot.Tasks {
+				if len(task.AllowedUsers) > 0 {
+					taskPerms[taskName] = task.AllowedUsers
+					for _, user := range task.AllowedUsers {
+						globalUsers[user] = true
+					}
+				}
+			}
+		}
+	}
+
+	if len(globalUsers) == 0 {
+		log.Warn("警告：所有任务都没有配置 allowed_users，任何用户都无法执行任务")
+	}
+
 	return &DispatcherHandler{
-		BaseHandler:    NewBaseHandler(),
-		userWhiteList:  make(map[string]bool),
-		taskWhiteList:  make(map[string]bool),
-		userInfoCache:  make(map[string]string), // 初始化用户信息缓存
+		BaseHandler:         NewBaseHandler(),
+		userWhiteList:       globalUsers,
+		taskUserPermissions: taskPerms,
+		taskWhiteList:       make(map[string]bool),
+		userInfoCache:       make(map[string]string), // 初始化用户信息缓存
 	}
 }
 
