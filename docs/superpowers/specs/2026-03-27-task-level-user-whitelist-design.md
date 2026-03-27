@@ -117,16 +117,13 @@ type DispatcherHandler struct {
 
 ### 3.4 初始化流程
 
-#### main.go 启动逻辑
+#### NewDispatcherHandler 内部构建权限数据
 
 ```go
-func main() {
-    // 加载配置
-    cfg, err := config.LoadConfig(configPath)
-    if err != nil {
-        log.Fatal(err)
-    }
-
+func NewDispatcherHandler(
+    cfg *config.ServiceConfig,
+    semanticCfg *SemanticMatchConfig,
+) *DispatcherHandler {
     // 收集所有 executor 任务的权限信息
     globalUsers := make(map[string]bool)
     taskPerms := make(map[string][]string)
@@ -147,34 +144,36 @@ func main() {
         }
     }
 
-    // 创建 dispatcher，传入权限数据
-    dispatcherHandler := handler.NewDispatcherHandler(
-        semanticCfg,
-        globalUsers,
-        taskPerms,
-    )
+    // 启动时检查：如果全局白名单为空则警告
+    if len(globalUsers) == 0 {
+        log.Warn("警告：所有任务都没有配置 allowed_users，任何用户都无法执行任务")
+    }
 
-    // 启动机器人...
-}
-```
-
-#### NewDispatcherHandler 签名变更
-
-```go
-func NewDispatcherHandler(
-    semanticCfg *SemanticMatchConfig,
-    globalUsers map[string]bool,
-    taskPerms map[string][]string,
-) *DispatcherHandler {
     return &DispatcherHandler{
         BaseHandler:         NewBaseHandler(),
         userWhiteList:       globalUsers,
         taskUserPermissions: taskPerms,
-        layeredMatcher:      nil, // 稍后设置
+        layeredMatcher:      nil, // 稍后通过 SetLayeredMatcher 设置
         userInfoCache:       make(map[string]string),
     }
 }
 ```
+
+#### main.go 调用方式
+
+```go
+func main() {
+    // 加载配置
+    cfg, err := config.LoadConfig(configPath)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // 创建 dispatcher（内部自动构建权限数据）
+    dispatcherHandler := handler.NewDispatcherHandler(cfg, semanticCfg)
+
+    // 启动机器人...
+}
 
 ### 3.5 权限检查流程
 
