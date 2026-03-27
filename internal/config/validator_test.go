@@ -229,3 +229,79 @@ func TestValidateConfig_MissingRobotGroupID(t *testing.T) {
 		t.Errorf("Error should mention robot_group_id, got: %v", err)
 	}
 }
+
+func TestValidateConfig_TaskAllowedUsersWithoutDisplayName(t *testing.T) {
+	cfg := &ServiceConfig{
+		Bots: []BotConfig{
+			{
+				Name:           "dispatcher",
+				AppID:          "cli_123",
+				AppSecret:      "secret",
+				Role:           "dispatcher",
+				TaskScripts:    map[string]string{"deploy": "/opt/scripts/deploy.sh"},
+			},
+			{
+				Name:                "executor",
+				AppID:               "cli_456",
+				AppSecret:           "secret",
+				Role:                "executor",
+				AllowedDispatchers:  []string{"cli_123"},
+				Tasks:               map[string]TaskDetail{},
+			},
+		},
+		RobotGroupID: "oc_test",
+	}
+
+	// 手动添加任务
+	cfg.Bots[1].Tasks["test-task"] = TaskDetail{
+		Script:       "/opt/scripts/test.sh",
+		AllowedUsers: []string{"user1", "user2"}, // 配置了 allowed_users 但缺少 display_name
+	}
+
+	t.Logf("Config created: %+v", cfg)
+	t.Logf("Executor tasks: %+v", cfg.Bots[1].Tasks)
+	t.Logf("Test task detail: %+v", cfg.Bots[1].Tasks["test-task"])
+
+	err := ValidateConfig(cfg)
+	if err == nil {
+		t.Error("Expected error for task with allowed_users but missing display_name, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "display_name") {
+		t.Errorf("Error should mention display_name requirement, got: %v", err)
+	}
+}
+
+func TestValidateConfig_TaskAllowedUsersWithDisplayName(t *testing.T) {
+	cfg := &ServiceConfig{
+		Bots: []BotConfig{
+			{
+				Name:           "dispatcher",
+				AppID:          "cli_123",
+				AppSecret:      "secret",
+				Role:           "dispatcher",
+				TaskScripts:    map[string]string{"deploy": "/opt/scripts/deploy.sh"},
+			},
+			{
+				Name:                "executor",
+				AppID:               "cli_456",
+				AppSecret:           "secret",
+				Role:                "executor",
+				AllowedDispatchers:  []string{"cli_123"},
+				Tasks: map[string]TaskDetail{
+					"test-task": {
+						Script:       "/opt/scripts/test.sh",
+						AllowedUsers: []string{"user1", "user2"},
+						DisplayName:  "Test Task", // 正确配置了 display_name
+					},
+				},
+			},
+		},
+		RobotGroupID: "oc_test",
+	}
+
+	err := ValidateConfig(cfg)
+	if err != nil {
+		t.Errorf("Expected valid config, got error: %v", err)
+	}
+}

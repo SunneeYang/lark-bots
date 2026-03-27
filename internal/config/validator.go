@@ -124,5 +124,19 @@ func ValidateConfig(cfg *ServiceConfig) error {
 		return fmt.Errorf("配置错误：缺少 robot_group_id")
 	}
 
+	// 验证配置了 allowed_users 的任务必须有 display_name
+	for _, bot := range cfg.Bots {
+		if bot.Role == "executor" {
+			for taskName, task := range bot.Tasks {
+				if len(task.AllowedUsers) > 0 && task.DisplayName == "" {
+					return fmt.Errorf(
+						"配置错误：executor '%s' 的任务 '%s' 配置了 allowed_users 但缺少 display_name（用于错误提示）",
+						bot.Name, taskName,
+					)
+				}
+			}
+		}
+	}
+
 	return nil
 }

@@ -8,7 +8,7 @@ show_usage() {
     echo "Usage: $0 [OPTIONS] <bots>"
     echo ""
     echo "Arguments:"
-    echo "  bots            Comma-separated list of bot names to start (required)"
+    echo "  bots            Space-separated list of bot names to start (required)"
     echo ""
     echo "Options:"
     echo "  --all           Start all bots"
@@ -16,10 +16,10 @@ show_usage() {
     echo "  -h, --help      Show this help message"
     echo ""
     echo "Examples:"
-    echo "  $0 dispatcher                     Start specific bot"
-    echo "  $0 dispatcher,executor            Start multiple bots"
-    echo "  $0 --bots=dispatcher,executor     Start multiple bots (explicit)"
-    echo "  $0 --all                          Start all configured bots"
+    echo "  $0 dispatcher                        Start specific bot"
+    echo "  $0 dispatcher audit-executor         Start multiple bots (space-separated)"
+    echo "  $0 --bots=dispatcher,executor        Start multiple bots (comma-separated)"
+    echo "  $0 --all                             Start all configured bots"
     exit 0
 }
 
@@ -40,8 +40,8 @@ elif [[ "$1" == "--bots="* ]]; then
     BOT_LIST="${1#--bots=}"
     BOT_ARGS="start --bots=$BOT_LIST"
 else
-    # Comma-separated list or single bot name
-    BOT_LIST="$1"
+    # Space-separated list of bot names (join with comma)
+    BOT_LIST=$(echo "$*" | tr ' ' ',')
     BOT_ARGS="start --bots=$BOT_LIST"
 fi
 
