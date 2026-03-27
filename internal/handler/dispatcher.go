@@ -134,6 +134,15 @@ func (h *DispatcherHandler) handleLayeredMode(ctx context.Context, event interfa
 
 	result := h.layeredMatcher.Match(ctx, matcher.LayeredMatchInput{UserInput: enhancedMessage})
 
+	// 第二层：检查用户是否在匹配到的任务白名单中
+	if len(result.Matches) > 0 {
+		matchedTask := result.Matches[0]
+		allowedUsers, exists := h.taskUserPermissions[matchedTask.TaskName]
+		if !exists || !contains(allowedUsers, senderID) {
+			return fmt.Errorf("❌ 你没有权限执行任务：%s", matchedTask.DisplayName)
+		}
+	}
+
 	// 否定检测
 	if result.HasNegation {
 		replyMsg := "检测到否定意图（如「不要」「别」），请重新描述你要执行的操作"
