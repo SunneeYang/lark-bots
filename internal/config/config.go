@@ -17,11 +17,11 @@ var (
 
 // TaskDetail 任务详细配置
 type TaskDetail struct {
-	DisplayName  string   `yaml:"display_name,omitempty"` // 任务显示名称
-	Keywords     []string `yaml:"keywords,omitempty"`     // 关键词列表（用于语义匹配）
-	Names        []string `yaml:"names,omitempty"`        // 操作名候选列表
-	Script       string   `yaml:"script"`                 // 脚本路径
-	Params       []string `yaml:"params,omitempty"`       // 参数列表
+	DisplayName  string   `yaml:"display_name,omitempty"`  // 任务显示名称
+	Keywords     []string `yaml:"keywords,omitempty"`      // 关键词列表（用于语义匹配）
+	Names        []string `yaml:"names,omitempty"`         // 操作名候选列表
+	Script       string   `yaml:"script"`                  // 脚本路径
+	Params       []string `yaml:"params,omitempty"`        // 参数列表
 	AllowedUsers []string `yaml:"allowed_users,omitempty"` // 允许的用户列表
 }
 
@@ -55,14 +55,14 @@ type BotConfig struct {
 	GroupProjectMap map[string]string `yaml:"group_project_map,omitempty"` // 群组 ID 到项目名的映射（仅 dispatcher 角色），如 "oc_xxx": "土豆"
 
 	// Executor 特有配置
-	AllowedDispatchers []string          `yaml:"allowed_dispatchers,omitempty"` // 允许的 dispatcher app_id 列表
-	RoutingKeywords    []string          `yaml:"routing_keywords,omitempty"`    // Executor 路由关键词（粗粒度模糊匹配）
-	Description        string            `yaml:"description,omitempty"`          // Executor 描述（用于日志输出）
-	LegacyTasks        []ExecutorTask    `yaml:"legacy_tasks,omitempty"`        // 旧格式任务列表（待迁移，将被 Tasks 字段替代）
-	Tasks              map[string]TaskDetail `yaml:"tasks,omitempty"`           // 任务详细配置（参数化任务，新格式）
-	TaskScripts        map[string]string `yaml:"task_scripts,omitempty"`        // 旧版任务映射（兼容exact模式）
-	PollInterval       string            `yaml:"poll_interval,omitempty"`      // 轮询间隔（如 "1s", "500ms"，默认 "1s"）
-	MaxTasks           int               `yaml:"max_tasks,omitempty"`          // 最大并发任务数，0 或负数表示不限制，默认 0
+	AllowedDispatchers []string              `yaml:"allowed_dispatchers,omitempty"` // 允许的 dispatcher app_id 列表
+	RoutingKeywords    []string              `yaml:"routing_keywords,omitempty"`    // Executor 路由关键词（粗粒度模糊匹配）
+	Description        string                `yaml:"description,omitempty"`         // Executor 描述（用于日志输出）
+	LegacyTasks        []ExecutorTask        `yaml:"legacy_tasks,omitempty"`        // 旧格式任务列表（待迁移，将被 Tasks 字段替代）
+	Tasks              map[string]TaskDetail `yaml:"tasks,omitempty"`               // 任务详细配置（参数化任务，新格式）
+	TaskScripts        map[string]string     `yaml:"task_scripts,omitempty"`        // 旧版任务映射（兼容exact模式）
+	PollInterval       string                `yaml:"poll_interval,omitempty"`       // 轮询间隔（如 "1s", "500ms"，默认 "1s"）
+	MaxTasks           int                   `yaml:"max_tasks,omitempty"`           // 最大并发任务数，0 或负数表示不限制，默认 0
 
 	// 语义匹配配置
 	SemanticMatch *SemanticMatchConfig `yaml:"semantic_match,omitempty"`
@@ -72,10 +72,10 @@ type BotConfig struct {
 type SemanticMatchConfig struct {
 	Enabled   bool    `yaml:"enabled"`
 	Threshold float64 `yaml:"threshold"` // 相似度阈值，默认 0.7
-	Provider  string `yaml:"provider"`  // "glm" | "openai"
-	Model     string `yaml:"model"`     // 模型名（glm: embedding-3, openai: text-embedding-ada-002）
-	APIKey    string `yaml:"api_key"`   // API Key
-	BaseURL   string `yaml:"base_url"`  // 自定义 API 地址（可选）
+	Provider  string  `yaml:"provider"`  // "glm" | "openai"
+	Model     string  `yaml:"model"`     // 模型名（glm: embedding-3, openai: text-embedding-ada-002）
+	APIKey    string  `yaml:"api_key"`   // API Key
+	BaseURL   string  `yaml:"base_url"`  // 自定义 API 地址（可选）
 }
 
 // ServiceConfig 定义服务配置

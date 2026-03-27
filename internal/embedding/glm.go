@@ -17,8 +17,8 @@ type GLMProvider struct {
 }
 
 type glmEmbeddingRequest struct {
-	Model     string   `json:"model"`
-	Input    []string `json:"input"`
+	Model      string   `json:"model"`
+	Input      []string `json:"input"`
 	Dimensions int      `json:"dimensions,omitempty"`
 }
 
@@ -54,8 +54,8 @@ func (p *GLMProvider) Name() string {
 
 func (p *GLMProvider) Embed(ctx context.Context, texts []string) ([][]float64, error) {
 	reqBody := glmEmbeddingRequest{
-		Model:  p.model,
-		Input:  texts,
+		Model: p.model,
+		Input: texts,
 	}
 
 	jsonData, err := json.Marshal(reqBody)

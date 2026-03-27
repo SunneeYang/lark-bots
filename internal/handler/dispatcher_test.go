@@ -15,10 +15,54 @@ import (
 
 // createTestDispatcherHandler 创建用于测试的 dispatcher handler
 func createTestDispatcherHandler() *DispatcherHandler {
-	// 加载测试配置
-	cfg, err := config.LoadConfig("configs/bots.test.yaml")
-	if err != nil {
-		panic("加载测试配置失败: " + err.Error())
+	// 创建测试配置
+	cfg := &config.ServiceConfig{
+		RobotGroupID: "test-group-id",
+		Bots: []config.BotConfig{
+			{
+				Name:            "dispatcher",
+				AppID:           "cli_123",
+				AppSecret:       "secret",
+				Role:            "dispatcher",
+				GroupProjectMap: map[string]string{"test-group": "test-project"},
+				TaskScripts: map[string]string{
+					"test-task":          "/test.sh",
+					"potato-dev-restart": "/scripts/potato_restart.sh",
+					"mist-dev-update":    "/scripts/mist_update.sh",
+					"限制任务":               "/scripts/restricted.sh",
+					"无限制任务":              "/scripts/unrestricted.sh",
+				},
+			},
+			{
+				Name:               "executor",
+				AppID:              "cli_456",
+				AppSecret:          "secret",
+				Role:               "executor",
+				AllowedDispatchers: []string{"cli_123"},
+				Tasks: map[string]config.TaskDetail{
+					"test-task": {
+						Script:       "/test.sh",
+						AllowedUsers: []string{"user_1", "user_2"},
+					},
+					"potato-dev-restart": {
+						Script:       "/scripts/potato_restart.sh",
+						AllowedUsers: []string{"admin_user", "potato_admin"},
+					},
+					"mist-dev-update": {
+						Script:       "/scripts/mist_update.sh",
+						AllowedUsers: []string{"mist_user", "dev_team"},
+					},
+					"限制任务": {
+						Script:       "/scripts/restricted.sh",
+						AllowedUsers: []string{}, // 空数组表示拒绝所有人
+					},
+					"无限制任务": {
+						Script: "/scripts/unrestricted.sh",
+						// 没有AllowedUsers字段表示无限制
+					},
+				},
+			},
+		},
 	}
 
 	// 创建 handler，传入语义配置为 nil（不使用语义匹配）
@@ -52,7 +96,7 @@ func TestDispatcherHandler_UserNotInWhitelist(t *testing.T) {
 	handler := createTestDispatcherHandler()
 
 	// 设置白名单，不包含 user_2
-		handler.SetAllowedTasks([]string{"deploy.sh"})
+	handler.SetAllowedTasks([]string{"deploy.sh"})
 
 	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
 
@@ -75,7 +119,7 @@ func TestDispatcherHandler_TaskNotInWhitelist(t *testing.T) {
 	handler := createTestDispatcherHandler()
 
 	// 设置白名单，不包含 test.sh
-		handler.SetAllowedTasks([]string{"deploy.sh"})
+	handler.SetAllowedTasks([]string{"deploy.sh"})
 
 	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
 
@@ -288,7 +332,9 @@ func TestDispatcherHandler_StripAtMention(t *testing.T) {
 }
 
 func TestDispatcherHandler_SetLayeredMatcher(t *testing.T) {
-	h := NewDispatcherHandler(nil)
+	// 创建测试配置
+	testConfig := &config.ServiceConfig{}
+	h := NewDispatcherHandler(testConfig, nil)
 
 	// 创建测试匹配器
 	executors := []matcher.ExecutorTaskConfig{
@@ -310,7 +356,8 @@ func TestDispatcherHandler_SetLayeredMatcher(t *testing.T) {
 
 func TestDispatcherHandler_ModeDetection(t *testing.T) {
 	// 测试传统模式（无 layeredMatcher）
-	h1 := NewDispatcherHandler(nil)
+	testConfig := &config.ServiceConfig{}
+	h1 := NewDispatcherHandler(testConfig, nil)
 	if h1.layeredMatcher != nil {
 		t.Error("New dispatcher should not have layeredMatcher by default")
 	}
@@ -321,7 +368,7 @@ func TestDispatcherHandler_ModeDetection(t *testing.T) {
 			ExecutorID: "test-executor",
 		},
 	}
-	h2 := NewDispatcherHandler(nil)
+	h2 := NewDispatcherHandler(testConfig, nil)
 	h2.SetLayeredMatcher(matcher.NewLayeredMatcher(executors, nil))
 	if h2.layeredMatcher == nil {
 		t.Error("SetLayeredMatcher() should set layeredMatcher")
@@ -329,7 +376,9 @@ func TestDispatcherHandler_ModeDetection(t *testing.T) {
 }
 
 func TestDispatcherHandler_LayeredModeBasicFlow(t *testing.T) {
-	h := NewDispatcherHandler(nil)
+	// 创建测试配置
+	testConfig := &config.ServiceConfig{}
+	h := NewDispatcherHandler(testConfig, nil)
 
 	// 配置分层匹配器
 	executors := []matcher.ExecutorTaskConfig{
@@ -387,7 +436,9 @@ func TestDispatcherHandler_LayeredModeBasicFlow(t *testing.T) {
 
 // TestGroupProjectMap 测试群组项目关键词自动补充功能
 func TestGroupProjectMap(t *testing.T) {
-	h := NewDispatcherHandler(nil)
+	// 创建测试配置
+	testConfig := &config.ServiceConfig{}
+	h := NewDispatcherHandler(testConfig, nil)
 
 	// 配置群组到项目名的映射
 	groupProjectMap := map[string]string{
@@ -466,7 +517,9 @@ func TestGroupProjectMap(t *testing.T) {
 // ===== getUserInfo 测试 =====
 
 func TestDispatcherHandler_GetUserInfo_CacheHit(t *testing.T) {
-	h := NewDispatcherHandler(nil)
+	// 创建测试配置
+	testConfig := &config.ServiceConfig{}
+	h := NewDispatcherHandler(testConfig, nil)
 	ctx := context.Background()
 	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
 
@@ -487,7 +540,9 @@ func TestDispatcherHandler_GetUserInfo_CacheHit(t *testing.T) {
 }
 
 func TestDispatcherHandler_GetUserInfo_ConcurrentAccess(t *testing.T) {
-	h := NewDispatcherHandler(nil)
+	// 创建测试配置
+	testConfig := &config.ServiceConfig{}
+	h := NewDispatcherHandler(testConfig, nil)
 	ctx := context.Background()
 	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
 
@@ -522,10 +577,12 @@ func TestDispatcherHandler_GetUserInfo_ConcurrentAccess(t *testing.T) {
 // TestDispatcherHandler_HandleLayeredMode_Integration 测试 handleLayeredMode 的完整集成流程
 // 验证：消息增强 → 分层匹配 → 获取用户信息 → 构建 JSON → 发送到群组
 func TestDispatcherHandler_HandleLayeredMode_Integration(t *testing.T) {
-	h := NewDispatcherHandler(nil)
+	// 创建测试配置
+	testConfig := &config.ServiceConfig{}
+	h := NewDispatcherHandler(testConfig, nil)
 
 	// 1. 配置白名单用户
-	
+
 	// 2. 配置群组项目映射
 	h.SetGroupProjectMap(map[string]string{
 		"oc_potato_dev": "土豆",
@@ -595,10 +652,12 @@ func TestDispatcherHandler_HandleLayeredMode_Integration(t *testing.T) {
 
 // TestDispatcherHandler_HandleLayeredMode_NoMatch 测试无匹配场景
 func TestDispatcherHandler_HandleLayeredMode_NoMatch(t *testing.T) {
-	h := NewDispatcherHandler(nil)
+	// 创建测试配置
+	testConfig := &config.ServiceConfig{}
+	h := NewDispatcherHandler(testConfig, nil)
 
 	// 配置白名单用户
-	
+
 	// 配置分层匹配器（只有土豆任务，且只配置重启操作）
 	executors := []matcher.ExecutorTaskConfig{
 		{
@@ -649,10 +708,12 @@ func TestDispatcherHandler_HandleLayeredMode_NoMatch(t *testing.T) {
 
 // TestDispatcherHandler_HandleLayeredMode_Negation 测试否定意图检测
 func TestDispatcherHandler_HandleLayeredMode_Negation(t *testing.T) {
-	h := NewDispatcherHandler(nil)
+	// 创建测试配置
+	testConfig := &config.ServiceConfig{}
+	h := NewDispatcherHandler(testConfig, nil)
 
 	// 配置白名单用户
-	
+
 	// 配置分层匹配器
 	executors := []matcher.ExecutorTaskConfig{
 		{
@@ -702,10 +763,12 @@ func TestDispatcherHandler_HandleLayeredMode_Negation(t *testing.T) {
 
 // TestDispatcherHandler_HandleLayeredMode_GroupProjectEnhancement 测试群组项目关键词自动补充
 func TestDispatcherHandler_HandleLayeredMode_GroupProjectEnhancement(t *testing.T) {
-	h := NewDispatcherHandler(nil)
+	// 创建测试配置
+	testConfig := &config.ServiceConfig{}
+	h := NewDispatcherHandler(testConfig, nil)
 
 	// 配置白名单用户
-	
+
 	// 配置群组项目映射
 	h.SetGroupProjectMap(map[string]string{
 		"oc_potato_dev": "土豆",
@@ -752,10 +815,12 @@ func TestDispatcherHandler_HandleLayeredMode_GroupProjectEnhancement(t *testing.
 
 // TestDispatcherHandler_HandleLayeredMode_UserSpecifiedProject 测试用户已指定项目时不自动补充
 func TestDispatcherHandler_HandleLayeredMode_UserSpecifiedProject(t *testing.T) {
-	h := NewDispatcherHandler(nil)
+	// 创建测试配置
+	testConfig := &config.ServiceConfig{}
+	h := NewDispatcherHandler(testConfig, nil)
 
 	// 配置白名单用户
-	
+
 	// 配置群组项目映射
 	h.SetGroupProjectMap(map[string]string{
 		"oc_potato_dev": "土豆",
@@ -807,17 +872,17 @@ func TestDispatcher_TwoLayerPermissionCheck(t *testing.T) {
 	cfg := &config.ServiceConfig{
 		Bots: []config.BotConfig{
 			{
-				Name:           "dispatcher",
-				AppID:          "cli_123",
-				AppSecret:      "secret",
-				Role:           "dispatcher",
+				Name:      "dispatcher",
+				AppID:     "cli_123",
+				AppSecret: "secret",
+				Role:      "dispatcher",
 			},
 			{
-				Name:                "executor",
-				AppID:               "cli_456",
-				AppSecret:           "secret",
-				Role:                "executor",
-				AllowedDispatchers:  []string{"cli_123"},
+				Name:               "executor",
+				AppID:              "cli_456",
+				AppSecret:          "secret",
+				Role:               "executor",
+				AllowedDispatchers: []string{"cli_123"},
 				Tasks: map[string]config.TaskDetail{
 					"task1": {
 						Script:       "/opt/scripts/task1.sh",
@@ -878,23 +943,15 @@ func TestDispatcher_TwoLayerPermissionCheck(t *testing.T) {
 
 // TestDispatcher_TaskPermissionEdgeCases 测试任务权限边界情况
 func TestDispatcher_TaskPermissionEdgeCases(t *testing.T) {
-	// 加载测试配置
-	cfg, err := config.LoadConfig("configs/bots.test.yaml")
-	if err != nil {
-		t.Fatalf("加载测试配置失败: %v", err)
-	}
-
-	// 创建 dispatcher handler
-	handler := NewDispatcherHandler(cfg, nil)
-	handler.SetRobotGroupID(cfg.RobotGroupID)
+	handler := createTestDispatcherHandler()
 
 	// 测试用例
 	testCases := []struct {
-		name         string
-		userID       string
-		message      string
-		expectedErr  string
-		description  string
+		name        string
+		userID      string
+		message     string
+		expectedErr string
+		description string
 	}{
 		{
 			name:        "任务没有allowed_users",
@@ -972,15 +1029,7 @@ func TestDispatcher_TaskPermissionEdgeCases(t *testing.T) {
 
 // TestDispatcher_PermissionCheckConcurrency 测试权限检查的并发安全性
 func TestDispatcher_PermissionCheckConcurrency(t *testing.T) {
-	// 加载测试配置
-	cfg, err := config.LoadConfig("configs/bots.test.yaml")
-	if err != nil {
-		t.Fatalf("加载测试配置失败: %v", err)
-	}
-
-	// 创建 dispatcher handler
-	handler := NewDispatcherHandler(cfg, nil)
-	handler.SetRobotGroupID(cfg.RobotGroupID)
+	handler := createTestDispatcherHandler()
 
 	const numGoroutines = 10
 	const numRequests = 5
@@ -1032,4 +1081,3 @@ func TestDispatcher_PermissionCheckConcurrency(t *testing.T) {
 		t.Logf("并发权限检查测试通过，共 %d 个 goroutine 执行 %d 次请求", numGoroutines, numGoroutines*numRequests)
 	}
 }
-

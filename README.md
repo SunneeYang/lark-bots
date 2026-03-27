@@ -85,12 +85,11 @@
   app_id: "cli_xxx"
   app_secret: "xxx"
   role: "dispatcher"
-  allowed_users:
-    - "ou_xxx"  # 允许的用户列表
+  # 注意：用户白名单已移到任务级配置
 ```
 
 **安全控制:**
-- 用户白名单 (`allowed_users`)
+- 任务级用户白名单 (`allowed_users` 在每个任务配置中)
 - 任务白名单（自动从所有 executor 的 task_scripts 合并）
 
 #### Executor (执行机器人)
@@ -145,9 +144,8 @@ vim configs/bots.yaml
 
 **配置说明:**
 1. `robot_group_id`: 机器人群 ID（所有机器人必须加入此群）
-2. `allowed_users`: 允许发起任务的用户列表（仅 dispatcher）
-3. `task_scripts`: 任务名 → 脚本路径映射（executor）
-4. `bots`: 机器人配置列表
+2. `task_scripts`: 任务名 → 脚本路径映射（executor）
+3. `bots`: 机器人配置列表
 
 **获取飞书应用信息:**
 - 访问 [飞书开放平台](https://open.feishu.cn/app)
@@ -345,8 +343,7 @@ bots:
     app_id: "cli_xxxxxxxxxxxxxxxxx"
     app_secret: "xxxxxxxxxxxxxxxxxxxx"
     role: "dispatcher"
-    allowed_users:
-      - "ou_xxxxxxxxxxxxxxxxx"  # 允许的用户列表
+    # 注意：用户白名单已移到任务级配置
 
   # 执行机器人
   - name: "dev-executor"
@@ -363,8 +360,44 @@ bots:
 
 ### 安全配置建议
 
-#### 1. 用户白名单
-严格限制可以发起任务的用户，避免未授权访问。
+#### 1. 任务级用户白名单
+用户白名单已从全局级别迁移到任务级别，提供更精细的权限控制。
+
+**旧配置（已弃用）:**
+```yaml
+- name: "dispatcher"
+  role: "dispatcher"
+  allowed_users:    # 全局用户白名单
+    - "user1"
+    - "user2"
+```
+
+**新配置（推荐）:**
+```yaml
+- name: "executor"
+  role: "executor"
+  task_scripts:
+    deploy: "/opt/scripts/deploy.sh"
+    test: "/opt/scripts/test.sh"
+  tasks:
+    deploy:
+      script: "/opt/scripts/deploy.sh"
+      allowed_users:  # 仅允许用户部署
+        - "admin"
+        - "devops"
+    test:
+      script: "/opt/scripts/test.sh"
+      allowed_users:  # 允许更多用户执行测试
+        - "admin"
+        - "devops"
+        - "tester"
+        - "developer"
+```
+
+#### 2. 权限策略
+- **最小权限原则**: 每个任务只分配必要的用户权限
+- **分层授权**: 管理员拥有所有任务权限，普通用户有限权限
+- **审计友好**: 所有权限操作都有详细日志记录
 
 ```yaml
 allowed_users:

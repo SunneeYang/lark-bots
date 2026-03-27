@@ -159,7 +159,6 @@ func joinLines(lines []string) string {
 	return result
 }
 
-
 func mapKeys(m map[string]config.TaskDetail) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {

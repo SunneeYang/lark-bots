@@ -27,7 +27,7 @@ import (
 
 // 全局组件（供事件处理器使用）
 var (
-	globalRegistry    *bot.BotRegistry
+	globalRegistry   *bot.BotRegistry
 	globalTaskLogger *logger.TaskLogger
 	globalRouter     *router.MessageRouter
 )
@@ -62,8 +62,8 @@ func mapKeys(m map[string]*handler.ExecutorHandler) []string {
 }
 
 var (
-	cfgFile    string
-	bots       string
+	cfgFile string
+	bots    string
 )
 
 var rootCmd = &cobra.Command{
@@ -281,9 +281,9 @@ func runStart(cmd *cobra.Command, args []string) {
 				executorBot,
 				cfg.RobotGroupID,
 				dispatchersMap,
-				executorHandler,  // 传递 ExecutorHandler 引用
+				executorHandler, // 传递 ExecutorHandler 引用
 				taskNameToScript,
-				botCfg.Tasks,      // 传递完整 Tasks 配置（包含 params）
+				botCfg.Tasks, // 传递完整 Tasks 配置（包含 params）
 				pollInterval,
 				maxTasks,
 			)

@@ -118,10 +118,10 @@ func TestLayeredMatcher_Operation(t *testing.T) {
 	matcher := NewLayeredMatcher(nil, nil)
 
 	tests := []struct {
-		name      string
-		remaining string
-		names     TaskNames
-		wantOp    string
+		name       string
+		remaining  string
+		names      TaskNames
+		wantOp     string
 		wantMethod string
 	}{
 		{
@@ -131,7 +131,7 @@ func TestLayeredMatcher_Operation(t *testing.T) {
 				Primary: "重启",
 				Aliases: []string{"重启", "重新启动"},
 			},
-			wantOp:    "重启",
+			wantOp:     "重启",
 			wantMethod: "exact",
 		},
 		{
@@ -141,7 +141,7 @@ func TestLayeredMatcher_Operation(t *testing.T) {
 				Primary: "重启",
 				Aliases: []string{"重启", "重新启动", "restart"},
 			},
-			wantOp:    "重启",
+			wantOp:     "重启",
 			wantMethod: "exact",
 		},
 		{
@@ -161,7 +161,7 @@ func TestLayeredMatcher_Operation(t *testing.T) {
 				Primary: "重启",
 				Aliases: []string{"重启", "重新启动"},
 			},
-			wantOp:    "重启",
+			wantOp:     "重启",
 			wantMethod: "exact",
 		},
 	}
@@ -355,16 +355,16 @@ func TestLayeredMatcher_Match_EndToEnd(t *testing.T) {
 			wantHasNeg:    false,
 		},
 		{
-			name:       "否定意图",
-			input:      "土豆开发服不要重启",
+			name:        "否定意图",
+			input:       "土豆开发服不要重启",
 			wantMatches: 0,
-			wantHasNeg: true,
+			wantHasNeg:  true,
 		},
 		{
-			name:       "无匹配",
-			input:      "南瓜生产服重启",
+			name:        "无匹配",
+			input:       "南瓜生产服重启",
 			wantMatches: 0,
-			wantHasNeg: false,
+			wantHasNeg:  false,
 		},
 	}
 

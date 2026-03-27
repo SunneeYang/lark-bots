@@ -138,4 +138,3 @@ func (s *Sender) ReplyToMessage(parentMessageID, msgType, content string) error 
 
 	return nil
 }
-

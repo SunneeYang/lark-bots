@@ -161,20 +161,20 @@ func TestTaskLogger_QueryTasks_ByUser(t *testing.T) {
 
 	// 创建不同用户的任务
 	record1 := &bot.TaskRecord{
-		ID:         "task-user1",
-		TaskName:   "test.sh",
-		Status:     "completed",
-		StartTime:  time.Now(),
-		User:       "user_1",
+		ID:        "task-user1",
+		TaskName:  "test.sh",
+		Status:    "completed",
+		StartTime: time.Now(),
+		User:      "user_1",
 	}
 	logger.CreateTask(record1)
 
 	record2 := &bot.TaskRecord{
-		ID:         "task-user2",
-		TaskName:   "test.sh",
-		Status:     "completed",
-		StartTime:  time.Now(),
-		User:       "user_2",
+		ID:        "task-user2",
+		TaskName:  "test.sh",
+		Status:    "completed",
+		StartTime: time.Now(),
+		User:      "user_2",
 	}
 	logger.CreateTask(record2)
 
@@ -198,20 +198,20 @@ func TestTaskLogger_QueryTasks_ByExecutor(t *testing.T) {
 
 	// 创建不同执行器的任务
 	record1 := &bot.TaskRecord{
-		ID:         "task-exec1",
-		TaskName:   "test.sh",
-		Status:     "completed",
-		StartTime:  time.Now(),
-		Executor:   "executor-1",
+		ID:        "task-exec1",
+		TaskName:  "test.sh",
+		Status:    "completed",
+		StartTime: time.Now(),
+		Executor:  "executor-1",
 	}
 	logger.CreateTask(record1)
 
 	record2 := &bot.TaskRecord{
-		ID:         "task-exec2",
-		TaskName:   "test.sh",
-		Status:     "completed",
-		StartTime:  time.Now(),
-		Executor:   "executor-2",
+		ID:        "task-exec2",
+		TaskName:  "test.sh",
+		Status:    "completed",
+		StartTime: time.Now(),
+		Executor:  "executor-2",
 	}
 	logger.CreateTask(record2)
 
@@ -235,18 +235,18 @@ func TestTaskLogger_QueryTasks_ByTaskName(t *testing.T) {
 
 	// 创建不同任务名的任务
 	record1 := &bot.TaskRecord{
-		ID:         "task-deploy",
-		TaskName:   "deploy.sh",
-		Status:     "completed",
-		StartTime:  time.Now(),
+		ID:        "task-deploy",
+		TaskName:  "deploy.sh",
+		Status:    "completed",
+		StartTime: time.Now(),
 	}
 	logger.CreateTask(record1)
 
 	record2 := &bot.TaskRecord{
-		ID:         "task-restart",
-		TaskName:   "restart.sh",
-		Status:     "completed",
-		StartTime:  time.Now(),
+		ID:        "task-restart",
+		TaskName:  "restart.sh",
+		Status:    "completed",
+		StartTime: time.Now(),
 	}
 	logger.CreateTask(record2)
 
@@ -270,32 +270,32 @@ func TestTaskLogger_QueryTasks_MultipleFilters(t *testing.T) {
 
 	// 创建多个任务
 	record1 := &bot.TaskRecord{
-		ID:         "task-match",
-		TaskName:   "deploy.sh",
-		Status:     "completed",
-		StartTime:  time.Now(),
-		User:       "user_1",
-		Executor:   "executor-1",
+		ID:        "task-match",
+		TaskName:  "deploy.sh",
+		Status:    "completed",
+		StartTime: time.Now(),
+		User:      "user_1",
+		Executor:  "executor-1",
 	}
 	logger.CreateTask(record1)
 
 	record2 := &bot.TaskRecord{
-		ID:         "task-nomatch-status",
-		TaskName:   "deploy.sh",
-		Status:     "pending",
-		StartTime:  time.Now(),
-		User:       "user_1",
-		Executor:   "executor-1",
+		ID:        "task-nomatch-status",
+		TaskName:  "deploy.sh",
+		Status:    "pending",
+		StartTime: time.Now(),
+		User:      "user_1",
+		Executor:  "executor-1",
 	}
 	logger.CreateTask(record2)
 
 	record3 := &bot.TaskRecord{
-		ID:         "task-nomatch-user",
-		TaskName:   "deploy.sh",
-		Status:     "completed",
-		StartTime:  time.Now(),
-		User:       "user_2",
-		Executor:   "executor-1",
+		ID:        "task-nomatch-user",
+		TaskName:  "deploy.sh",
+		Status:    "completed",
+		StartTime: time.Now(),
+		User:      "user_2",
+		Executor:  "executor-1",
 	}
 	logger.CreateTask(record3)
 
@@ -324,10 +324,10 @@ func TestTaskLogger_QueryTasks_EmptyFilter(t *testing.T) {
 	// 创建任务
 	for i := 0; i < 3; i++ {
 		record := &bot.TaskRecord{
-			ID:         fmt.Sprintf("task-%d", i),
-			TaskName:   "test.sh",
-			Status:     "completed",
-			StartTime:  time.Now(),
+			ID:        fmt.Sprintf("task-%d", i),
+			TaskName:  "test.sh",
+			Status:    "completed",
+			StartTime: time.Now(),
 		}
 		logger.CreateTask(record)
 	}

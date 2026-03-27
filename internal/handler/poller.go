@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/SunneeYang/lark-bots/internal/bot"
 	"github.com/SunneeYang/lark-bots/internal/common"
 	"github.com/SunneeYang/lark-bots/internal/config"
+	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
 // MessagePoller 消息轮询器，定期从飞书 API 获取群消息
@@ -23,17 +23,17 @@ type MessagePoller struct {
 	lastRequestTime int64 // 上次请求时间（毫秒时间戳）
 
 	allowedDispatchers map[string]bool
-	executorHandler  *ExecutorHandler       // 新增：ExecutorHandler 引用
-	taskScripts       map[string]string     // 旧格式：taskScripts（兼容）
-	taskNameToScript  map[string]string     // 任务名称 -> 脚本路径
-	tasks             map[string]config.TaskDetail // 新增：完整任务配置（包含 params）
-	sender           *common.Sender
-	stopCh           chan struct{}
-	wg               sync.WaitGroup
+	executorHandler    *ExecutorHandler             // 新增：ExecutorHandler 引用
+	taskScripts        map[string]string            // 旧格式：taskScripts（兼容）
+	taskNameToScript   map[string]string            // 任务名称 -> 脚本路径
+	tasks              map[string]config.TaskDetail // 新增：完整任务配置（包含 params）
+	sender             *common.Sender
+	stopCh             chan struct{}
+	wg                 sync.WaitGroup
 
 	// 已处理消息 ID 去重（使用 sync.Map 支持并发安全读写）
-	processedMsgs     sync.Map
-	dedupWindow      time.Duration // 去重时间窗口
+	processedMsgs sync.Map
+	dedupWindow   time.Duration // 去重时间窗口
 
 	// 并发控制
 	taskWg   sync.WaitGroup // 跟踪正在执行的任务
@@ -48,17 +48,17 @@ func NewMessagePoller(botClient *bot.BotClient, robotGroupID string, allowedDisp
 	sender.SetRobotGroupID(robotGroupID)
 
 	p := &MessagePoller{
-		botClient:         botClient,
-		robotGroupID:      robotGroupID,
-		pollInterval:      pollInterval,
+		botClient:          botClient,
+		robotGroupID:       robotGroupID,
+		pollInterval:       pollInterval,
 		allowedDispatchers: allowedDispatchers,
-		taskNameToScript: taskNameToScript,
-		executorHandler:  executorHandler,  // 新增：ExecutorHandler 引用
-		tasks:            tasks,            // 新增：完整任务配置（包含 params）
-		sender:           sender,
-		stopCh:           make(chan struct{}),
-		dedupWindow:      2 * time.Minute, // 去重时间窗口，保留最近 2 分钟的消息 ID
-		maxTasks:         maxTasks,
+		taskNameToScript:   taskNameToScript,
+		executorHandler:    executorHandler, // 新增：ExecutorHandler 引用
+		tasks:              tasks,           // 新增：完整任务配置（包含 params）
+		sender:             sender,
+		stopCh:             make(chan struct{}),
+		dedupWindow:        2 * time.Minute, // 去重时间窗口，保留最近 2 分钟的消息 ID
+		maxTasks:           maxTasks,
 	}
 
 	// 初始化 semaphore（如果需要限制并发数）
@@ -152,8 +152,8 @@ func (p *MessagePoller) fetchMessages(ctx context.Context) {
 	req := larkim.NewListMessageReqBuilder().
 		ContainerIdType("chat").
 		ContainerId(p.robotGroupID).
-		StartTime(fmt.Sprintf("%d", startTime/1000)). // API 需要秒时间戳
-		EndTime(fmt.Sprintf("%d", endTime/1000)).   // 截止时间（不含）
+		StartTime(fmt.Sprintf("%d", startTime/1000)).        // API 需要秒时间戳
+		EndTime(fmt.Sprintf("%d", endTime/1000)).            // 截止时间（不含）
 		SortType(larkim.SortTypeListMessageByCreateTimeAsc). // 升序：最旧的消息在前
 		PageSize(50).
 		Build()
@@ -399,7 +399,7 @@ func (p *MessagePoller) buildTaskCard(taskName, requester, status, output string
 	card := map[string]interface{}{
 		"config": map[string]bool{
 			"wide_screen_mode": true,
-			"update_multi":    true, // 允许更新，对所有用户可见
+			"update_multi":     true, // 允许更新，对所有用户可见
 		},
 		"header": map[string]interface{}{
 			"title": map[string]string{

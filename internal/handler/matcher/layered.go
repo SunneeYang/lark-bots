@@ -42,9 +42,9 @@ type ExecutorTaskConfig struct {
 // LayeredMatcher 分层任务匹配器
 // 三层过滤：routing_keywords(粗) → keywords(精) → names(语义兜底)
 type LayeredMatcher struct {
-	executors      []ExecutorTaskConfig
-	semanticMatch  *EmbeddingMatcher
-	negationWords  []string
+	executors     []ExecutorTaskConfig
+	semanticMatch *EmbeddingMatcher
+	negationWords []string
 }
 
 // NewLayeredMatcher 创建分层匹配器
@@ -86,7 +86,7 @@ type LayeredMatchResult struct {
 
 // LayeredMatch 所有命中的结果（用于多意图检测）
 type LayeredMatchAll struct {
-	Matches []LayeredMatchResult
+	Matches     []LayeredMatchResult
 	HasNegation bool // 输入中是否包含否定词
 }
 
@@ -98,7 +98,7 @@ func (m *LayeredMatcher) Match(ctx context.Context, input LayeredMatchInput) Lay
 	hasNegation := m.containsNegation(userInput)
 	if hasNegation {
 		return LayeredMatchAll{
-			Matches:      []LayeredMatchResult{}, // 否定意图时不返回任何匹配
+			Matches:     []LayeredMatchResult{}, // 否定意图时不返回任何匹配
 			HasNegation: true,
 		}
 	}
@@ -150,8 +150,8 @@ func (m *LayeredMatcher) Match(ctx context.Context, input LayeredMatchInput) Lay
 	// 如果有精确匹配，直接返回，不启用语义匹配
 	if len(exactMatches) > 0 {
 		return LayeredMatchAll{
-			Matches:      exactMatches,
-			HasNegation:  false,
+			Matches:     exactMatches,
+			HasNegation: false,
 		}
 	}
 
@@ -199,8 +199,8 @@ func (m *LayeredMatcher) Match(ctx context.Context, input LayeredMatchInput) Lay
 	}
 
 	return LayeredMatchAll{
-		Matches:      semanticMatches,
-		HasNegation:  false,
+		Matches:     semanticMatches,
+		HasNegation: false,
 	}
 }
 

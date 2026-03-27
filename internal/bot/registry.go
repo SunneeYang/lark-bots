@@ -8,8 +8,8 @@ import (
 // BotRegistry 机器人注册表
 type BotRegistry struct {
 	mu     sync.RWMutex
-	bots   map[string]*BotClient // key: bot_name
-	byApp  map[string]*BotClient // key: app_id
+	bots   map[string]*BotClient   // key: bot_name
+	byApp  map[string]*BotClient   // key: app_id
 	byRole map[string][]*BotClient // key: role
 }
 

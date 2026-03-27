@@ -18,9 +18,9 @@ func TestBuildTaskCommand(t *testing.T) {
 // TestTaskCommand_String 测试序列化任务命令
 func TestTaskCommand_String(t *testing.T) {
 	tests := []struct {
-		name      string
-		cmd       *TaskCommand
-		wantStr   string
+		name    string
+		cmd     *TaskCommand
+		wantStr string
 	}{
 		{
 			name: "标准格式",
@@ -51,37 +51,37 @@ func TestTaskCommand_String(t *testing.T) {
 // TestParseTaskCommand 测试解析任务命令
 func TestParseTaskCommand(t *testing.T) {
 	tests := []struct {
-		name        string
-		input       string
-		wantTask    string
-		wantErr     bool
+		name     string
+		input    string
+		wantTask string
+		wantErr  bool
 	}{
 		{
 			name:     "标准格式",
 			input:    "task:potato-dev-restart",
 			wantTask: "potato-dev-restart",
-			wantErr:   false,
+			wantErr:  false,
 		},
 		{
 			name:     "包含连字符",
 			input:    "task:mist-test-update",
 			wantTask: "mist-test-update",
-			wantErr:   false,
+			wantErr:  false,
 		},
 		{
-			name:     "无task前缀",
-			input:    "potato-dev-restart",
-			wantErr:   true,
+			name:    "无task前缀",
+			input:   "potato-dev-restart",
+			wantErr: true,
 		},
 		{
-			name:     "空任务名",
-			input:    "task:",
-			wantErr:   true,
+			name:    "空任务名",
+			input:   "task:",
+			wantErr: true,
 		},
 		{
-			name:     "只有前缀",
-			input:    "task:",
-			wantErr:   true,
+			name:    "只有前缀",
+			input:   "task:",
+			wantErr: true,
 		},
 	}
 
@@ -123,10 +123,10 @@ func TestTaskCommand_RoundTrip(t *testing.T) {
 // TestTaskCommand_JSON 测试 JSON 序列化
 func TestTaskCommand_JSON(t *testing.T) {
 	tests := []struct {
-		name      string
-		cmd       *TaskCommand
-		wantTask  string
-		wantReq   string
+		name     string
+		cmd      *TaskCommand
+		wantTask string
+		wantReq  string
 	}{
 		{
 			name: "标准格式",
@@ -235,12 +235,12 @@ func TestTaskCommand_JSON_Example(t *testing.T) {
 // TestParseTaskCommandJSON 测试从 JSON 字符串解析任务命令
 func TestParseTaskCommandJSON(t *testing.T) {
 	tests := []struct {
-		name         string
-		input        string
-		wantTask     string
+		name          string
+		input         string
+		wantTask      string
 		wantRequester string
-		wantErr      bool
-		errContains  string
+		wantErr       bool
+		errContains   string
 	}{
 		{
 			name:          "标准JSON格式",
@@ -264,52 +264,52 @@ func TestParseTaskCommandJSON(t *testing.T) {
 			wantErr:       false,
 		},
 		{
-			name:         "无效的JSON",
-			input:        `{invalid json}`,
-			wantErr:      true,
-			errContains:  "JSON 解析失败",
+			name:        "无效的JSON",
+			input:       `{invalid json}`,
+			wantErr:     true,
+			errContains: "JSON 解析失败",
 		},
 		{
-			name:         "缺少task字段",
-			input:        `{"requester":"张三"}`,
-			wantErr:      true,
-			errContains:  "缺少或无效的 task 字段",
+			name:        "缺少task字段",
+			input:       `{"requester":"张三"}`,
+			wantErr:     true,
+			errContains: "缺少或无效的 task 字段",
 		},
 		{
-			name:         "缺少requester字段",
-			input:        `{"task":"potato-dev-restart"}`,
-			wantErr:      true,
-			errContains:  "缺少或无效的 requester 字段",
+			name:        "缺少requester字段",
+			input:       `{"task":"potato-dev-restart"}`,
+			wantErr:     true,
+			errContains: "缺少或无效的 requester 字段",
 		},
 		{
-			name:         "task字段为空字符串",
-			input:        `{"task":"","requester":"张三"}`,
-			wantErr:      true,
-			errContains:  "缺少或无效的 task 字段",
+			name:        "task字段为空字符串",
+			input:       `{"task":"","requester":"张三"}`,
+			wantErr:     true,
+			errContains: "缺少或无效的 task 字段",
 		},
 		{
-			name:         "task字段类型错误",
-			input:        `{"task":123,"requester":"张三"}`,
-			wantErr:      true,
-			errContains:  "缺少或无效的 task 字段",
+			name:        "task字段类型错误",
+			input:       `{"task":123,"requester":"张三"}`,
+			wantErr:     true,
+			errContains: "缺少或无效的 task 字段",
 		},
 		{
-			name:         "requester字段类型错误",
-			input:        `{"task":"potato-dev-restart","requester":456}`,
-			wantErr:      true,
-			errContains:  "缺少或无效的 requester 字段",
+			name:        "requester字段类型错误",
+			input:       `{"task":"potato-dev-restart","requester":456}`,
+			wantErr:     true,
+			errContains: "缺少或无效的 requester 字段",
 		},
 		{
-			name:         "空JSON对象",
-			input:        `{}`,
-			wantErr:      true,
-			errContains:  "缺少或无效的 task 字段",
+			name:        "空JSON对象",
+			input:       `{}`,
+			wantErr:     true,
+			errContains: "缺少或无效的 task 字段",
 		},
 		{
-			name:         "空字符串",
-			input:        ``,
-			wantErr:      true,
-			errContains:  "JSON 解析失败",
+			name:        "空字符串",
+			input:       ``,
+			wantErr:     true,
+			errContains: "JSON 解析失败",
 		},
 	}
 
@@ -381,7 +381,7 @@ func TestParseTaskCommandJSON_Whitespace(t *testing.T) {
 			input: `{ "task" : "test-task" , "requester" : "user" }`,
 		},
 		{
-			name:  "带换行",
+			name: "带换行",
 			input: `{
 				"task": "test-task",
 				"requester": "user"
@@ -406,4 +406,3 @@ func TestParseTaskCommandJSON_Whitespace(t *testing.T) {
 		})
 	}
 }
-

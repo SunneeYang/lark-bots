@@ -28,10 +28,10 @@ func TestEmbeddingMatcher_Match(t *testing.T) {
 		name       string
 		userInput  string
 		candidates []string
-		provider  *mockProvider
-		threshold float64
-		want      string
-		wantConf  float64
+		provider   *mockProvider
+		threshold  float64
+		want       string
+		wantConf   float64
 	}{
 		{
 			name:       "完全匹配",
@@ -81,8 +81,8 @@ func TestEmbeddingMatcher_Match(t *testing.T) {
 			provider: &mockProvider{
 				embeddings: [][]float64{
 					{0.5, 0.5, 0}, // 部署 (中等相似度)
-					{1, 0, 0},      // deploy
-					{0, 1, 0},      // backup
+					{1, 0, 0},     // deploy
+					{0, 1, 0},     // backup
 				},
 			},
 			threshold: 0.4,

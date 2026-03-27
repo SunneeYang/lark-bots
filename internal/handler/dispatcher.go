@@ -6,11 +6,11 @@ import (
 	"strings"
 	"sync"
 
-	larkcontact "github.com/larksuite/oapi-sdk-go/v3/service/contact/v3"
 	"github.com/SunneeYang/lark-bots/internal/bot"
 	"github.com/SunneeYang/lark-bots/internal/common"
 	"github.com/SunneeYang/lark-bots/internal/config"
 	"github.com/SunneeYang/lark-bots/internal/handler/matcher"
+	larkcontact "github.com/larksuite/oapi-sdk-go/v3/service/contact/v3"
 	"log/slog"
 )
 
@@ -28,13 +28,13 @@ type SemanticMatchConfig struct {
 type DispatcherHandler struct {
 	*BaseHandler
 
-	userWhiteList        map[string]bool
-	taskUserPermissions  map[string][]string // 任务级用户权限：任务名 → 用户列表
-	taskWhiteList        map[string]bool       // 旧模式：任务名白名单
-	layeredMatcher       *matcher.LayeredMatcher // 新模式：分层匹配器
-	groupProjectMap      map[string]string      // 群组 ID 到项目名的映射（自动补充项目关键词）
-	userInfoCache        map[string]string      // OpenID → 真实姓名缓存
-	userInfoCacheMu      sync.RWMutex           // 保护 userInfoCache 的读写锁
+	userWhiteList       map[string]bool
+	taskUserPermissions map[string][]string     // 任务级用户权限：任务名 → 用户列表
+	taskWhiteList       map[string]bool         // 旧模式：任务名白名单
+	layeredMatcher      *matcher.LayeredMatcher // 新模式：分层匹配器
+	groupProjectMap     map[string]string       // 群组 ID 到项目名的映射（自动补充项目关键词）
+	userInfoCache       map[string]string       // OpenID → 真实姓名缓存
+	userInfoCacheMu     sync.RWMutex            // 保护 userInfoCache 的读写锁
 }
 
 // NewDispatcherHandler 创建分发机器人处理器
