@@ -14,7 +14,7 @@ bots:
   #   - 加入用户群，接收用户指令
   #   - 在机器人群分发任务给执行机器人（纯文本，不使用 @mention）
   #   - 收集执行结果并回复用户
-  #   - 配置用户白名单进行安全控制
+  #   - 权限控制已移至任务级：每个任务可以单独配置允许执行的用户
   #   - 支持两种匹配模式：
   #     * 旧模式：精确匹配任务名（task_scripts）
   #     * 新模式：三层语义匹配（tasks + routing_keywords）
@@ -22,13 +22,6 @@ bots:
     app_id: "cli_xxxxxxxxxxxxxxxxx"
     app_secret: "xxxxxxxxxxxxxxxxxxxx"
     role: "dispatcher"
-    # 允许的用户列表（仅 dispatcher 角色）
-    # 只有在此列表中的用户才能发起任务
-    # 获取方式: 在飞书管理后台查看用户 ID
-    allowed_users:
-      - "ou_xxxxxxxxxxxxxxxxx"
-      - "ou_yyyyyyyyyyyyyyyyyy"
-      - "ou_zzzzzzzzzzzzzzzzzzzz"
     # 群组到项目名的映射（可选）
     # 用于根据用户所在的群组自动补充项目关键词（土豆、迷雾等）
     # 例如：在"土豆开发群"中说"重启"，会自动补充为"土豆 重启"
@@ -69,17 +62,28 @@ bots:
       # 任务 1: 迷雾服务器
       - keywords: ["迷雾", "mist"]  # 第二层精匹配：命中任何一个即确定任务
         names: ["重启", "重新启动", "restart", "reload"]  # 第三层：操作名候选（精确或语义匹配）
+        display_name: "迷雾开发服重启"
         script: "/opt/scripts/mist_dev_restart.sh"
+        allowed_users:
+          - "ou_xxxxxxxxxxxxxxxxx"  # 只有指定用户可以执行
       - keywords: ["迷雾", "mist"]
         names: ["更新", "升级", "update", "upgrade"]
+        display_name: "迷雾开发服更新"
         script: "/opt/scripts/mist_dev_update.sh"
+        allowed_users:
+          - "ou_yyyyyyyyyyyyyyyyyy"  # 只有指定用户可以执行
       # 任务 2: 土豆服务器
       - keywords: ["土豆", "potato"]
         names: ["重启", "重新启动", "restart", "reload"]
+        display_name: "土豆开发服重启"
         script: "/opt/scripts/potato_dev_restart.sh"
+        allowed_users:
+          - "ou_zzzzzzzzzzzzzzzzzzzz"  # 只有指定用户可以执行
       - keywords: ["土豆", "potato"]
         names: ["更新", "升级", "update", "upgrade"]
+        display_name: "土豆开发服更新"
         script: "/opt/scripts/potato_dev_update.sh"
+        # 如果没有 allowed_users，则认为所有有用户权限的用户都可以执行
     # 轮询间隔（可选，默认 "1s"）
     poll_interval: "1s"
     # 最大并发任务数（可选，默认 0 表示不限制）
@@ -124,7 +128,11 @@ bots:
     tasks:
       - keywords: ["生产服", "生产"]
         names: ["回滚", "rollback", "回退"]
+        display_name: "生产服回滚"
         script: "/opt/scripts/prod_rollback.sh"
+        allowed_users:
+          - "ou_admin"          # 只有管理员可以执行生产服回滚
+          - "ou_ops_manager"    # 运维经理也可以执行
     # 旧格式（当 tasks 为空时使用）
     task_scripts:
       health_check: "/opt/scripts/prod_health_check.sh"
@@ -224,3 +232,74 @@ bots:
 #
 # 3. 未匹配: "那个服务器搞一下"
 #    → 无匹配 → 提示用户明确服务器名和操作
+#
+## 任务级用户权限（重要更新）
+#
+# ### 权限层级
+# 1. **Dispatcher 层级**: 移除了全局 allowed_users，现在 dispatcher 会接受任何用户的请求
+# 2. **Task 层级**: 每个任务可以配置 allowed_users 来限制谁能执行该任务
+#
+# ### 配置方式
+# ```yaml
+# tasks:
+#   task_name:
+#     keywords: ["服务器名"]
+#     names: ["操作名"]
+#     display_name: "显示名称"
+#     script: "/path/to/script.sh"
+#     allowed_users:  # 可选，不配置则所有有权限用户都可以执行
+#       - "ou_user1"
+#       - "ou_user2"
+# ```
+#
+# ### 权限验证流程
+# 1. Dispatcher 接收用户消息
+# 2. 通过三层语义匹配找到匹配的任务
+# 3. 检查该任务是否配置了 allowed_users
+#    - 如果没有配置：允许执行
+#    - 如果配置了空数组：拒绝所有用户
+#    - 如果配置了用户列表：只有列表中的用户可以执行
+# 4. 如果检查通过，分发任务给对应的 executor
+# 5. 如果检查失败，返回明确的错误信息："❌ 你没有权限执行任务：任务名称"
+#
+# ### 最佳实践
+# 1. **最小权限原则**: 每个任务只配置必要的用户权限
+# 2. **角色划分**:
+#    - 开发者：只能操作开发服任务
+#    - 运维：可以操作所有服务器
+#    - 管理员：可以执行回滚等危险操作
+# 3. **权限审计**: 定期 review 各任务的 allowed_users 配置
+# 4. **紧急处理**: 为运维配置可覆盖所有任务的权限
+#
+# ### 示例配置
+# ```yaml
+# tasks:
+#   # 开发任务：只有开发者可以执行
+#   dev_restart:
+#     keywords: ["开发", "dev"]
+#     names: ["重启"]
+#     allowed_users:
+#       - "ou_dev1"
+#       - "ou_dev2"
+#
+#   # 生产任务：只有运维可以执行
+#   prod_restart:
+#     keywords: ["生产", "prod"]
+#     names: ["重启"]
+#     allowed_users:
+#       - "ou_ops"
+#       - "ou_admin"
+#
+#   # 公共任务：所有人都可以执行
+#   health_check:
+#     keywords: ["检查", "健康"]
+#     names: ["检查"]
+#     # 没有 allowed_users，所有人都可以执行
+# ```
+#
+# ### 迁移建议
+# 如果从旧版本升级：
+# 1. 移除 dispatcher 的 allowed_users 配置
+# 2. 为每个任务添加适当的 allowed_users 配置
+# 3. 测试权限控制是否按预期工作
+# 4. 更新用户文档，说明新的权限机制
