@@ -19,6 +19,12 @@
 - 启动时报错比运行时静默失败更安全
 - 运行时零开销
 
+## 约束
+
+- `allowed_users` **只支持姓名**，不再支持直接填写 open_id。所有 open_id 必须通过全局 `users` 映射表注册。
+- 旧格式任务（`LegacyTasks`、`TaskScripts`）没有 `AllowedUsers` 字段，无需处理。
+- `users` 映射表的 value 必须是非空字符串，启动时校验。
+
 ## 变更详情
 
 ### 1. 配置模型
@@ -27,9 +33,9 @@
 
 ```go
 type ServiceConfig struct {
-    RobotGroupID string              `yaml:"robot_group_id"`
-    Users        map[string]string   `yaml:"users,omitempty"` // 姓名 → open_id 全局映射
-    Bots         []BotConfig         `yaml:"bots"`
+    Bots         []BotConfig       `yaml:"bots"`
+    RobotGroupID string            `yaml:"robot_group_id"`
+    Users        map[string]string `yaml:"users,omitempty"` // 姓名 → open_id 全局映射
 }
 ```
 
@@ -46,7 +52,7 @@ bots:
   - name: dev-executor
     role: executor
     tasks:
-      restart:
+      - name: "restart"
         display_name: "开发服重启"
         script: /opt/scripts/restart.sh
         allowed_users: [张三, 李四]
@@ -77,23 +83,65 @@ func ResolveUsers(cfg *ServiceConfig) error {
 }
 ```
 
-调用时机：在 `ValidateConfig` 之后立即调用，确保业务逻辑拿到的都是 `open_id`。
+### 4. 调用时序
 
-### 4. 不变更的部分
+`ResolveUsers` 必须在 `main.go` 中的以下位置调用：
+
+```
+LoadConfig → ValidateConfig → ResolveUsers → 创建 Registry → 创建 Handlers
+```
+
+在 `ValidateConfig` 和创建 Handlers 之间调用，因为：
+- `ValidateConfig` 校验配置结构完整性（此时 `allowed_users` 仍然是姓名）
+- `ResolveUsers` 将姓名解析为 open_id
+- `NewDispatcherHandler` 读取 `allowed_users`，此时已经是 open_id
+
+`ValidateConfig` 中现有的校验（如检查 `allowed_users` 配置了但缺少 `display_name`）只检查 `len > 0`，不受姓名→open_id 转换影响，无需调整校验逻辑。
+
+### 5. 不变更的部分
 
 - `dispatcher.go`、`executor.go` 业务逻辑不变
 - `DispatcherHandler`、`ExecutorHandler` 结构不变
 - 权限校验逻辑不变（比较的仍然是 open_id）
 
-### 5. 测试
+### 6. 测试
 
-- `user_resolver_test.go`：解析成功、姓名不存在报错、空映射表、空 allowed_users
-- 更新 `configs/bots.test.yaml` 加入 `users` 映射
+- `user_resolver_test.go`：解析成功、姓名不存在报错、空映射表、空 allowed_users、users value 为空时报错
+- 更新 `configs/bots.test.yaml`：添加 `users` 映射，将 `test_user_001`、`test_user_002`、`admin_user` 改为姓名引用
 - 确保现有 dispatcher 测试通过
 
-### 6. 配置示例更新
+### 7. 配置示例更新
 
 更新 `configs/bots.yaml.example`，添加 `users` 映射表示例和注释。
+
+## 测试配置迁移示例
+
+迁移前（`bots.test.yaml`）：
+
+```yaml
+bots:
+  - name: "test-dev-executor"
+    tasks:
+      - name: "mist-dev-restart"
+        allowed_users:
+          - "test_user_001"
+```
+
+迁移后：
+
+```yaml
+users:
+  测试用户1: test_user_001
+  测试用户2: test_user_002
+  管理员: admin_user
+
+bots:
+  - name: "test-dev-executor"
+    tasks:
+      - name: "mist-dev-restart"
+        allowed_users:
+          - "测试用户1"
+```
 
 ## 影响范围
 
@@ -102,7 +150,6 @@ func ResolveUsers(cfg *ServiceConfig) error {
 | `internal/config/config.go` | 新增 `Users` 字段 |
 | `internal/config/user_resolver.go` | 新增文件，解析函数 |
 | `internal/config/user_resolver_test.go` | 新增文件，测试 |
-| `internal/config/validator.go` | 可能调整校验顺序 |
 | `configs/bots.yaml.example` | 添加 users 示例 |
-| `configs/bots.test.yaml` | 添加 users 映射 |
-| `cmd/bot-service/main.go` | 调用 ResolveUsers |
+| `configs/bots.test.yaml` | 添加 users 映射，迁移 allowed_users |
+| `cmd/bot-service/main.go` | ValidateConfig 后调用 ResolveUsers |
