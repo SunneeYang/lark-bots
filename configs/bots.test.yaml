@@ -1,6 +1,12 @@
 # 飞书机器人服务 - 测试配置
 # 此配置用于本地开发和测试
 
+# 全局用户映射表：姓名 → open_id
+users:
+  测试用户1: test_user_001
+  测试用户2: test_user_002
+  管理员: admin_user
+
 # 机器人群 ID (测试环境)
 robot_group_id: "oc_test_robot_group_001"
 
@@ -53,14 +59,14 @@ bots:
         names: ["重启", "重新启动", "restart", "reload"]
         script: "/Users/hortor/Documents/work/lark/test/scripts/mist_dev_restart.sh"
         allowed_users:
-          - "test_user_001"    # 只有这个用户可以执行
+          - "测试用户1"      # 只有这个用户可以执行
       - name: "mist-dev-update"
         display_name: "迷雾开发服更新"
         keywords: ["迷雾", "mist"]
         names: ["更新", "升级", "update", "upgrade"]
         script: "/Users/hortor/Documents/work/lark/test/scripts/mist_dev_update.sh"
         allowed_users:
-          - "test_user_002"    # 只有这个用户可以执行
+          - "测试用户2"      # 只有这个用户可以执行
       # 任务 2: 土豆服务器
       - name: "potato-dev-restart"
         display_name: "土豆开发服重启"
@@ -68,7 +74,7 @@ bots:
         names: ["重启", "重新启动", "restart", "reload"]
         script: "/Users/hortor/Documents/work/lark/test/scripts/potato_dev_restart.sh"
         allowed_users:
-          - "admin_user"       # 只有管理员可以执行
+          - "管理员"         # 只有管理员可以执行
       - name: "potato-dev-update"
         display_name: "土豆开发服更新"
         keywords: ["土豆", "potato"]
