@@ -18,11 +18,6 @@ bots:
     app_id: "cli_test_dispatcher_123"
     app_secret: "test_secret_dispatcher_abc"
     role: "dispatcher"
-    # 允许的用户列表
-    allowed_users:
-      - "test_user_001"
-      - "test_user_002"
-      - "admin_user"
     # 群组到项目名的映射（测试用）
     # 测试时可以将实际的群组 ID 填入，验证群组项目自动补充功能
     group_project_map:
