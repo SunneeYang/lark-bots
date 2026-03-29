@@ -127,6 +127,12 @@ func runStart(cmd *cobra.Command, args []string) {
 	}
 	fmt.Println("✅ 配置验证通过")
 
+	if err := config.ResolveUsers(cfg); err != nil {
+		fmt.Printf("❌ 用户名解析失败: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("✅ 用户名解析完成")
+
 	// 2. 创建机器人注册表
 	globalRegistry = bot.NewBotRegistry()
 
