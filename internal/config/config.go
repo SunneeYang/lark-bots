@@ -80,8 +80,9 @@ type SemanticMatchConfig struct {
 
 // ServiceConfig 定义服务配置
 type ServiceConfig struct {
-	Bots         []BotConfig `yaml:"bots"`
-	RobotGroupID string      `yaml:"robot_group_id"`
+	Bots         []BotConfig       `yaml:"bots"`
+	RobotGroupID string            `yaml:"robot_group_id"`
+	Users        map[string]string `yaml:"users,omitempty"` // 姓名 → open_id 全局映射
 }
 
 // LoadConfig 从指定路径加载配置文件
