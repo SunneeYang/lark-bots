@@ -4,13 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/SunneeYang/lark-bots/internal/bot"
 	"github.com/SunneeYang/lark-bots/internal/common"
 	"github.com/SunneeYang/lark-bots/internal/config"
 	"github.com/SunneeYang/lark-bots/internal/handler/matcher"
-	larkcontact "github.com/larksuite/oapi-sdk-go/v3/service/contact/v3"
 	"log/slog"
 )
 
@@ -33,8 +31,7 @@ type DispatcherHandler struct {
 	taskWhiteList       map[string]bool         // 旧模式：任务名白名单
 	layeredMatcher      *matcher.LayeredMatcher // 新模式：分层匹配器
 	groupProjectMap     map[string]string       // 群组 ID 到项目名的映射（自动补充项目关键词）
-	userInfoCache       map[string]string       // OpenID → 真实姓名缓存
-	userInfoCacheMu     sync.RWMutex            // 保护 userInfoCache 的读写锁
+	userMapping         map[string]string       // 配置文件中的 users 映射表（open_id → 姓名的反向映射）
 }
 
 // NewDispatcherHandler 创建分发机器人处理器
@@ -61,12 +58,19 @@ func NewDispatcherHandler(cfg *config.ServiceConfig, semanticCfg *SemanticMatchC
 		slog.Warn("警告：所有任务都没有配置 allowed_users，任何用户都无法执行任务")
 	}
 
+	// 构建 open_id → 姓名的反向映射（用于直接从配置获取用户姓名，无需 API 调用）
+	// 原因：能通过白名单的用户一定在配置的 users 表中
+	userMapping := make(map[string]string)
+	for name, openID := range cfg.Users {
+		userMapping[openID] = name
+	}
+
 	return &DispatcherHandler{
 		BaseHandler:         NewBaseHandler(),
 		userWhiteList:       globalUsers,
 		taskUserPermissions: taskPerms,
 		taskWhiteList:       make(map[string]bool),
-		userInfoCache:       make(map[string]string), // 初始化用户信息缓存
+		userMapping:         userMapping,
 	}
 }
 
@@ -176,6 +180,8 @@ func (h *DispatcherHandler) handleLayeredMode(ctx context.Context, event interfa
 	// 获取发布者信息
 	requester, err := h.getUserInfo(ctx, botClient, senderID)
 	if err != nil {
+		// 记录详细错误信息用于调试
+		slog.Error("获取用户信息失败", "sender_id", senderID, "error", err)
 		replyMsg := "❌ 获取用户信息失败，请稍后重试"
 		if replyErr := h.replyToUser(event, replyMsg, botClient); replyErr != nil {
 			return fmt.Errorf("获取用户信息失败且回复失败: %w (回复错误: %v)", err, replyErr)
@@ -345,45 +351,17 @@ func (h *DispatcherHandler) enhanceMessageWithGroupProject(_ context.Context, ev
 	return enhanced
 }
 
-// getUserInfo 获取用户真实姓名（带缓存）
-// 1. 检查缓存，如果存在直接返回
-// 2. 调用飞书 API 获取用户信息
-// 3. 存入缓存并返回
+// getUserInfo 获取用户真实姓名
+// 直接从配置文件的 users 映射表查找（open_id → 姓名的反向映射）
+// 原因：能通过白名单的用户一定在配置的 users 表中（allowed_users 使用姓名，会被解析为 open_id）
 func (h *DispatcherHandler) getUserInfo(ctx context.Context, botClient *bot.BotClient, openID string) (string, error) {
-	// 1. 检查缓存（使用读锁）
-	h.userInfoCacheMu.RLock()
-	if name, exists := h.userInfoCache[openID]; exists {
-		h.userInfoCacheMu.RUnlock()
-		return name, nil
-	}
-	h.userInfoCacheMu.RUnlock()
-
-	// 2. 调用飞书 Contact API 获取用户信息
-	// 使用 contact v3 API，支持 tenant access token（机器人可用）
-	userInfo, err := botClient.LarkClient.Contact.User.Get(ctx, larkcontact.NewGetUserReqBuilder().
-		UserId(openID).
-		UserIdType("open_id").
-		Build())
-	if err != nil {
-		return "", fmt.Errorf("获取用户信息失败: %w", err)
+	name, exists := h.userMapping[openID]
+	if !exists {
+		return "", fmt.Errorf("用户 %s 不在配置的 users 映射表中", openID)
 	}
 
-	if !userInfo.Success() {
-		return "", fmt.Errorf("获取用户信息失败: code=%d, msg=%s", userInfo.Code, userInfo.Msg)
-	}
-
-	// 3. 提取真实姓名
-	if userInfo.Data == nil || userInfo.Data.User == nil || userInfo.Data.User.Name == nil {
-		return "", fmt.Errorf("用户信息响应缺少姓名字段")
-	}
-	realName := *userInfo.Data.User.Name
-
-	// 4. 存入缓存（使用写锁）
-	h.userInfoCacheMu.Lock()
-	h.userInfoCache[openID] = realName
-	h.userInfoCacheMu.Unlock()
-
-	return realName, nil
+	slog.Info("从配置获取用户姓名", "open_id", openID, "name", name)
+	return name, nil
 }
 
 // contains 检查字符串是否在字符串切片中

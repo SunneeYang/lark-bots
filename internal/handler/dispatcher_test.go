@@ -530,9 +530,9 @@ func TestDispatcherHandler_GetUserInfo_CacheHit(t *testing.T) {
 	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
 
 	// 预先填充缓存
-	h.userInfoCacheMu.Lock()
-	h.userInfoCache["ou_123"] = "张三"
-	h.userInfoCacheMu.Unlock()
+	// 使用 userMapping，无需锁
+	h.userMapping["ou_123"] = "张三"
+	// 使用 userMapping，无需锁
 
 	// 调用 getUserInfo，应该从缓存返回
 	name, err := h.getUserInfo(ctx, testBot, "ou_123")
@@ -553,9 +553,9 @@ func TestDispatcherHandler_GetUserInfo_ConcurrentAccess(t *testing.T) {
 	testBot := bot.NewBotClient("dispatcher", "cli_123", "secret", "dispatcher")
 
 	// 预先填充缓存
-	h.userInfoCacheMu.Lock()
-	h.userInfoCache["ou_789"] = "王五"
-	h.userInfoCacheMu.Unlock()
+	// 使用 userMapping，无需锁
+	h.userMapping["ou_789"] = "王五"
+	// 使用 userMapping，无需锁
 
 	// 并发读取
 	done := make(chan bool)
@@ -613,9 +613,9 @@ func TestDispatcherHandler_HandleLayeredMode_Integration(t *testing.T) {
 	h.SetLayeredMatcher(matcher.NewLayeredMatcher(executors, nil))
 
 	// 4. 预填充用户信息缓存（模拟 getUserInfo 成功）
-	h.userInfoCacheMu.Lock()
-	h.userInfoCache["ou_test_user"] = "张三"
-	h.userInfoCacheMu.Unlock()
+	// 使用 userMapping，无需锁
+	h.userMapping["ou_test_user"] = "张三"
+	// 使用 userMapping，无需锁
 
 	// 5. 构造测试事件（模拟群聊消息）
 	event := map[string]interface{}{
@@ -679,9 +679,9 @@ func TestDispatcherHandler_HandleLayeredMode_NoMatch(t *testing.T) {
 	h.SetLayeredMatcher(matcher.NewLayeredMatcher(executors, nil))
 
 	// 预填充用户信息缓存
-	h.userInfoCacheMu.Lock()
-	h.userInfoCache["ou_test_user"] = "测试用户"
-	h.userInfoCacheMu.Unlock()
+	// 使用 userMapping，无需锁
+	h.userMapping["ou_test_user"] = "测试用户"
+	// 使用 userMapping，无需锁
 
 	// 构造测试事件（用户请求删除操作，但只配置了重启）
 	event := map[string]interface{}{
@@ -748,9 +748,9 @@ func TestDispatcherHandler_HandleLayeredMode_Negation(t *testing.T) {
 	h.SetLayeredMatcher(matcher.NewLayeredMatcher(executors, nil))
 
 	// 预填充用户信息缓存
-	h.userInfoCacheMu.Lock()
-	h.userInfoCache["ou_test_user"] = "测试用户"
-	h.userInfoCacheMu.Unlock()
+	// 使用 userMapping，无需锁
+	h.userMapping["ou_test_user"] = "测试用户"
+	// 使用 userMapping，无需锁
 
 	// 构造测试事件（包含否定词）
 	event := map[string]interface{}{
@@ -808,9 +808,9 @@ func TestDispatcherHandler_HandleLayeredMode_GroupProjectEnhancement(t *testing.
 	h.SetLayeredMatcher(matcher.NewLayeredMatcher(executors, nil))
 
 	// 预填充用户信息缓存
-	h.userInfoCacheMu.Lock()
-	h.userInfoCache["ou_test_user"] = "测试用户"
-	h.userInfoCacheMu.Unlock()
+	// 使用 userMapping，无需锁
+	h.userMapping["ou_test_user"] = "测试用户"
+	// 使用 userMapping，无需锁
 
 	// 构造测试事件（用户只说"重启"，应该自动补充"土豆"）
 	event := map[string]interface{}{
@@ -860,9 +860,9 @@ func TestDispatcherHandler_HandleLayeredMode_UserSpecifiedProject(t *testing.T) 
 	h.SetLayeredMatcher(matcher.NewLayeredMatcher(executors, nil))
 
 	// 预填充用户信息缓存
-	h.userInfoCacheMu.Lock()
-	h.userInfoCache["ou_test_user"] = "测试用户"
-	h.userInfoCacheMu.Unlock()
+	// 使用 userMapping，无需锁
+	h.userMapping["ou_test_user"] = "测试用户"
+	// 使用 userMapping，无需锁
 
 	// 构造测试事件（用户明确指定"迷雾"，虽然群组是土豆群）
 	event := map[string]interface{}{
