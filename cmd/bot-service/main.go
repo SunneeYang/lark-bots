@@ -201,6 +201,13 @@ func runStart(cmd *cobra.Command, args []string) {
 	}
 	dispatcherHandler := handler.NewDispatcherHandler(cfg, semanticCfg)
 	dispatcherHandler.SetRobotGroupID(cfg.RobotGroupID)
+
+	// 设置群组到项目名的映射（用于自动补充项目关键词）
+	if dispatcherCfg != nil && len(dispatcherCfg.GroupProjectMap) > 0 {
+		dispatcherHandler.SetGroupProjectMap(dispatcherCfg.GroupProjectMap)
+		fmt.Printf("   ✅ 群组项目映射已启用，共 %d 个映射\n", len(dispatcherCfg.GroupProjectMap))
+	}
+
 	globalRouter.RegisterHandler("dispatcher", dispatcherHandler)
 	fmt.Println("   ✅ dispatcher 处理器注册成功")
 
